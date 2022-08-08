@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
+
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/v2/definer"
 	"github.com/zhiting-tech/smartassistant/pkg/thingmodel"
 
@@ -136,10 +138,10 @@ func (d SceneCondition) CheckConditionItem(userId, deviceId int, isRequireNotify
 	}
 
 	// 设备控制权限的判断
-	//if !isRequireNotify && !IsDeviceControlPermit(userId, deviceId, item) {
+	// if !isRequireNotify && !IsDeviceControlPermit(userId, deviceId, item) {
 	//	err = errors.New(status.DeviceOrSceneControlDeny)
 	//	return
-	//}
+	// }
 
 	return
 }
@@ -238,6 +240,7 @@ func GetConditions(deviceID int, ae definer.AttributeEvent) (conds []SceneCondit
 }
 
 type Attribute struct {
+	ServiceName string                 `json:"service_name"`
 	ServiceType thingmodel.ServiceType `json:"service_type"`
 	thingmodel.Attribute
 }
@@ -245,6 +248,9 @@ type Attribute struct {
 func (attr *Attribute) Operate(operatorType OperatorType, val interface{}) bool {
 	switch operatorType {
 	case OperatorEQ:
+		if attr.ValType == thingmodel.JSON && attr.Type == thingmodel.SelectItems.Type {
+			return attr.handleSelectItems(val)
+		}
 		return val == attr.Val
 	case OperatorGT:
 		switch val.(type) {
@@ -267,4 +273,36 @@ func (attr *Attribute) Operate(operatorType OperatorType, val interface{}) bool 
 	}
 
 	return false
+}
+
+// handleSelectItems 处理场景触发条件, 触发认为是只要有一个元素相等便认为触发
+func (attr *Attribute) handleSelectItems(val interface{}) (hasTrigger bool) {
+	attrVal, ok := attr.Val.(string)
+	if !ok {
+		return
+	}
+	itemAttr, err := thingmodel.SelectUnmarshal([]byte(attrVal))
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+	deviceVal, ok := val.(string)
+	if !ok {
+		return
+	}
+	deviceAttr, err := thingmodel.SelectUnmarshal([]byte(deviceVal))
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+	attrSelected := itemAttr.GetSelectedItems()
+	deviceSelected := deviceAttr.GetSelectedItems()
+	for _, aSelected := range attrSelected {
+		for _, dSelected := range deviceSelected {
+			if aSelected.ID == dSelected.ID {
+				return true
+			}
+		}
+	}
+	return
 }

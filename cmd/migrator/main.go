@@ -3,13 +3,15 @@ package main
 import (
 	"encoding/json"
 	"flag"
+
+	"gopkg.in/oauth2.v3"
+	"gorm.io/gorm"
+
 	"github.com/zhiting-tech/smartassistant/modules/config"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/types"
 	"github.com/zhiting-tech/smartassistant/pkg/logger"
 	"github.com/zhiting-tech/smartassistant/pkg/thingmodel"
-	"gopkg.in/oauth2.v3"
-	"gorm.io/gorm"
 )
 
 var configFile = flag.String("c", "/mnt/data/zt-smartassistant/config/smartassistant.yaml", "config file")
@@ -20,16 +22,12 @@ func main() {
 
 	if err := entity.GetDB().Transaction(func(tx *gorm.DB) error {
 		// 更新clients
-		if err := migratorClient(tx); err != nil {
-			return err
-		}
-		// 更新sa
-		if err := updateSAModel(tx); err != nil {
+		if err := updateSCScope(tx); err != nil {
 			return err
 		}
 
-		// 更新除SA之外的设备
-		if err := updateDeviceWithOutSA(tx); err != nil {
+		// 更新area is_send_auth_to_sc
+		if err := updateAreaSCAuth(tx); err != nil {
 			return err
 		}
 
@@ -53,7 +51,6 @@ func updateSAModel(db *gorm.DB) error {
 
 type Device struct {
 	entity.Device
-	Identity string
 }
 
 var tm = &thingmodel.ThingModel{
@@ -146,22 +143,22 @@ var tm = &thingmodel.ThingModel{
 func updateDeviceWithOutSA(db *gorm.DB) error {
 	var devices []Device
 
-	if err := db.Select("id", "identity", "model").Where("model != ?", types.SaModel).Find(&devices).Error; err != nil {
+	if err := db.Select("id", "iid", "model").Where("model != ?", types.SaModel).Find(&devices).Error; err != nil {
 		return err
 	}
 
 	for _, d := range devices {
-		if err := db.Model(&entity.Device{ID: d.ID}).UpdateColumn("iid", d.Identity).Error; err != nil {
+		if err := db.Model(&entity.Device{ID: d.ID}).UpdateColumn("iid", d.IID).Error; err != nil {
 			return err
 		}
 
 		for _, i := range tm.Instances {
-			tm.Instances[0].IID = d.Identity
+			tm.Instances[0].IID = d.IID
 			for j, s := range i.Services {
 				if s.Type == "info" {
 					for k, a := range s.Attributes {
 						if a.Type == "identify" {
-							tm.Instances[0].Services[j].Attributes[k].Val = d.Identity
+							tm.Instances[0].Services[j].Attributes[k].Val = d.IID
 						}
 					}
 				}
@@ -232,7 +229,7 @@ func migratorClient(tx *gorm.DB) error {
 			ClientID:     saClient.ClientID,
 			ClientSecret: saClient.ClientSecret,
 			GrantType:    saClient.GrantType,
-			AllowScope:   saClient.AllowScope,
+			AllowScope:   types.WithScopes(types.ScopeAll),
 			Type:         entity.AreaClient,
 		}
 		saClientsOfArea = append(saClientsOfArea, saClientOfArea)
@@ -242,7 +239,7 @@ func migratorClient(tx *gorm.DB) error {
 			ClientID:     scClient.ClientID,
 			ClientSecret: scClient.ClientSecret,
 			GrantType:    scClient.GrantType,
-			AllowScope:   scClient.AllowScope,
+			AllowScope:   types.WithScopes(types.ScopeGetTokenBySC, types.ScopeDevice),
 			Type:         entity.SCClient,
 		}
 
@@ -257,16 +254,48 @@ func migratorClient(tx *gorm.DB) error {
 	tx.Exec("drop index idx_clients_client_secret;")
 	tx.Exec("drop index idx_clients_client_id;")
 
+	// 删除原有的client
+	if err := tx.Model(&entity.Client{}).Delete(clients).Error; err != nil {
+		logger.Error("delete clients err: %v", err)
+		return err
+	}
+
 	// 批量插入client
 	if err := tx.Session(&gorm.Session{SkipHooks: true}).CreateInBatches(&newClients, len(newClients)).Error; err != nil {
 		logger.Errorf("create clients err: %v", err)
 		return err
 	}
 
-	// 删除原有的client
-	if err := tx.Model(&entity.Client{}).Delete(clients).Error; err != nil {
-		logger.Error("delete clients err: %v", err)
+	return nil
+}
+
+func updateSCScope(tx *gorm.DB) error {
+
+	err := tx.Model(&entity.Client{}).Where(entity.Client{Type: entity.SCClient}).UpdateColumn("allow_scope", types.WithScopes(types.ScopeDevice, types.ScopeGetTokenBySC)).Error
+	if err != nil {
+		logger.Errorf("update sc scope err: %v", err)
 		return err
 	}
+
+	return nil
+}
+
+func updateAreaSCAuth(tx *gorm.DB) error {
+	var areas []entity.Area
+	if err := tx.Find(&areas).Error; err != nil {
+		return err
+	}
+
+	param := map[string]interface{}{
+		"is_send_auth_to_sc": false,
+	}
+	for _, a := range areas {
+		err := tx.Model(&entity.Area{}).Where(entity.Area{ID: a.ID}).Updates(param).Error
+		if err != nil {
+			logger.Errorf("update area err: %v", err)
+			return err
+		}
+	}
+
 	return nil
 }

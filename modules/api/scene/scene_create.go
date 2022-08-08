@@ -186,7 +186,7 @@ func checkTaskScene(c *gin.Context, controlSceneId int) (err error) {
 	}
 
 	var controlPermission bool
-	if controlPermission, err = CheckControlPermission(c, controlSceneId, session.Get(c).UserID); err != nil {
+	if controlPermission, err = CheckUserControlPermission(c, controlSceneId, session.Get(c).UserID); err != nil {
 		return
 	}
 	if !controlPermission {

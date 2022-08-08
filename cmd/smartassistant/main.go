@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/zhiting-tech/smartassistant/modules/sasignal"
+
 	"github.com/zhiting-tech/smartassistant/modules/job"
 	"github.com/zhiting-tech/smartassistant/modules/utils/backup"
 	"github.com/zhiting-tech/smartassistant/pkg/filebrowser"
@@ -43,7 +45,7 @@ func main() {
 	config.InitSAIDAndSAKeyIfEmpty(*configFile)
 	ctx, cancel := context.WithCancel(context.Background())
 	initLog(conf.Debug)
-	trace.Init("smartassistant")
+	trace.Init("smartassistant", trace.CustomSamplerOpt(conf.Debug))
 	logger.Infof("starting smartassistant %v", types.Version)
 	// 优先使用单例模式，循环引用通过依赖注入解耦
 	taskManager := task.GetManager()
@@ -59,7 +61,7 @@ func main() {
 	if err := entity.InitManagerRole(); err != nil {
 		logger.Panicln(err)
 	}
-
+	go sasignal.HandleUserSignal(ctx)
 	// 启动日志转发功能
 	logreplay.GetLogPlayer().EnableSave()
 	go logreplay.GetLogPlayer().Run(ctx)

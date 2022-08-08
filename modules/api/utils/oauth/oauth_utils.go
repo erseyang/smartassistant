@@ -56,3 +56,21 @@ func GetSAUserToken(user entity.User, req *http.Request) (token string, err erro
 	}
 	return ti.GetAccess(), nil
 }
+
+// GetClientToken 获取ClientCredentials模式token
+func GetClientToken(client entity.Client) (token string, err error) {
+	tgr := oauth2.TokenGenerateRequest{
+		ClientID:     client.ClientID,
+		ClientSecret: client.ClientSecret,
+		Scope:        client.AllowScope,
+		Request:      &http.Request{Header: make(http.Header)},
+	}
+
+	ti, err := GetOauthServer().GetAccessToken(oauth2.ClientCredentials, &tgr)
+	if err != nil {
+		return
+	}
+
+	token = ti.GetAccess()
+	return
+}

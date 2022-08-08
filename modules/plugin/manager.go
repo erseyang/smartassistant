@@ -38,11 +38,12 @@ func (m *manager) GetPluginWithContext(ctx context.Context, id string) (p *Plugi
 			Version: plg.Version,
 			Info:    plg.Intro,
 		},
-		ID:     plg.UID,
-		Image:  plg.Image,
-		Brand:  plg.Brand,
-		Source: entity.SourceTypeDefault,
-		AreaID: area.ID,
+		ID:       plg.UID,
+		Image:    plg.Image,
+		Brand:    plg.Brand,
+		Source:   entity.SourceTypeDefault,
+		AreaID:   area.ID,
+		UpdateAt: plg.UpdateAt,
 	}
 	return
 }
@@ -80,11 +81,12 @@ func (m *manager) loadDefaultPluginsWithContext(ctx context.Context) (plugins []
 				Version: plg.Version,
 				Info:    plg.Intro,
 			},
-			ID:     plg.UID,
-			Image:  plg.Image,
-			Brand:  plg.Brand,
-			AreaID: m.areaID,
-			Source: entity.SourceTypeDefault,
+			ID:       plg.UID,
+			Image:    plg.Image,
+			Brand:    plg.Brand,
+			AreaID:   m.areaID,
+			Source:   entity.SourceTypeDefault,
+			UpdateAt: plg.UpdateAt,
 		}
 		plugins = append(plugins, p)
 	}

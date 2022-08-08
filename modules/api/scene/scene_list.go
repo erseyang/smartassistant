@@ -138,9 +138,18 @@ func WrapScenes(c *gin.Context, scenes []entity.Scene, userID int, listType list
 	manualScenes = make([]manualSceneInfo, 0)
 	autoRunScenes = make([]autoRunSceneInfo, 0)
 
+	// 没有控制场景的权限，直接返回
+	if !entity.JudgePermit(userID, types.SceneControl) {
+		return
+	}
+	var up entity.Permissions
+	up, err = entity.GetUserPermissions(userID)
+	if err != nil {
+		return
+	}
 	for _, scene := range scenes {
 
-		if controlPermission, err = CheckControlPermission(c, scene.ID, userID); err != nil {
+		if controlPermission, err = CheckControlPermission(c, scene.ID, up); err != nil {
 			return
 		}
 		if listType == permitScene && !controlPermission {
@@ -272,12 +281,27 @@ func WrapTask(c *gin.Context, task entity.SceneTask) (item Item, err error) {
 	return
 }
 
-func CheckControlPermission(c *gin.Context, sceneID int, userID int) (controlPermission bool, err error) {
+func CheckControlPermission(c *gin.Context, sceneID int, up entity.Permissions) (controlPermission bool, err error) {
 	checked := make(map[int]bool)
-	return checkControlPermission(c, sceneID, userID, checked)
+
+	return checkControlPermission(c, sceneID, up, checked)
 }
 
-func checkControlPermission(c *gin.Context, sceneID int, userID int, checked map[int]bool) (controlPermission bool, err error) {
+func CheckUserControlPermission(c *gin.Context, sceneID int, userID int) (controlPermission bool, err error) {
+
+	// 没有控制场景的权限，直接返回
+	if !entity.JudgePermit(userID, types.SceneControl) {
+		return
+	}
+	var up entity.Permissions
+	up, err = entity.GetUserPermissions(userID)
+	if err != nil {
+		return
+	}
+	return CheckControlPermission(c, sceneID, up)
+}
+
+func checkControlPermission(c *gin.Context, sceneID int, up entity.Permissions, checked map[int]bool) (controlPermission bool, err error) {
 	var (
 		items []Item
 	)
@@ -285,20 +309,10 @@ func checkControlPermission(c *gin.Context, sceneID int, userID int, checked map
 		controlPermission = v
 		return
 	}
-
-	// 没有控制场景的权限，直接返回
-	if !entity.JudgePermit(userID, types.SceneControl) {
-		return
-	}
 	controlPermission = true
 	checked[sceneID] = true
 
 	if items, err = WrapTasks(c, sceneID); err != nil {
-		return
-	}
-	var up entity.UserPermissions
-	up, err = entity.GetUserPermissions(userID)
-	if err != nil {
 		return
 	}
 	for _, item := range items {
@@ -320,7 +334,7 @@ func checkControlPermission(c *gin.Context, sceneID int, userID int, checked map
 			continue
 		}
 
-		if controlPermission, err = checkControlPermission(c, item.ID, userID, checked); err != nil {
+		if controlPermission, err = checkControlPermission(c, item.ID, up, checked); err != nil {
 			return
 		}
 		// 嵌套控制场景不满足权限就直接返回false

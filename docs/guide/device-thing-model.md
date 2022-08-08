@@ -17,7 +17,7 @@
 | type        | on_off            |
 | permission  | read/write/notify |
 | val_type    | string            |
-| valid_value | on/off/switch     |
+| valid_value | on/off/toggle     |
 
 ### Brightness
 
@@ -483,6 +483,14 @@
 | type       | left_right_cruise  |
 | permission | read/write/notify  |
 | value_type | string             |
+
+### Temper
+
+| property   | value       |
+|------------|-------------|
+| type       | temper      |
+| permission | read/notify |
+| value_type | bool        |
 
 ## Services
 

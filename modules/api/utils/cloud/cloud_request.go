@@ -149,11 +149,11 @@ func DoWithContext(ctx context.Context, path, method string, requestData map[str
 	content, _ := json.Marshal(&requestData)
 	response, err := getResponse(ctx, url, method, content, options.isDefaultClient)
 	if err != nil {
-		logger.Error("get response error:", err.Error())
+		logger.Errorf("get %s response error: %s", url, err.Error())
 		return
 	}
 	if response.StatusCode != http.StatusOK {
-		logger.Errorf("http status: %s", response.Status)
+		logger.Errorf("get %s http status: %s", url, response.Status)
 		return resp, http.ErrNotSupported
 	}
 
@@ -170,7 +170,7 @@ func DoWithContext(ctx context.Context, path, method string, requestData map[str
 
 	// 0 标识请求成功
 	if scResp.Status != 0 {
-		logger.Errorf("status %d,reason %s", scResp.Status, scResp.Reason)
+		logger.Errorf("get %s status %d,reason %s", url, scResp.Status, scResp.Reason)
 		err = errors.New(scResp.Reason)
 		return
 	}

@@ -26,11 +26,22 @@ import (
 
 // RequireAccount 用户需要登录才可访问对应的接口
 func RequireAccount(c *gin.Context) {
-	if _, err := verifyAccessToken(c); err != nil {
+	if _, err := VerifyAccessToken(c); err != nil {
 		response.HandleResponse(c, err, nil)
 		c.Abort()
 		return
 	}
+}
+
+// RequireToken header中没token时从query中获取token
+func RequireToken(c *gin.Context) {
+
+	token := c.Request.Header.Get(types.SATokenKey)
+	queryToken := c.Query("token")
+	if token == "" && queryToken != "" {
+		c.Request.Header.Add(types.SATokenKey, queryToken)
+	}
+	RequireAccount(c)
 }
 
 // RequireAccountWithScope 检查是否登录，并且是否有权限
@@ -38,7 +49,7 @@ func RequireAccountWithScope(scope types.Scope) func(ctx *gin.Context) {
 	return func(c *gin.Context) {
 
 		// 校验token
-		ti, err := verifyAccessToken(c)
+		ti, err := VerifyAccessToken(c)
 		if err != nil {
 			response.HandleResponse(c, err, nil)
 			c.Abort()
@@ -61,7 +72,7 @@ func RequireAccountWithScope(scope types.Scope) func(ctx *gin.Context) {
 	}
 }
 
-func verifyAccessToken(c *gin.Context) (ti oauth2.TokenInfo, err error) {
+func VerifyAccessToken(c *gin.Context) (ti oauth2.TokenInfo, err error) {
 	accessToken := c.GetHeader(types.SATokenKey)
 	ti, err = oauth.GetOauthServer().Manager.LoadAccessToken(accessToken)
 	if err != nil {
@@ -97,24 +108,6 @@ func RequireOwner(c *gin.Context) {
 		return
 	}
 	response.HandleResponse(c, errors.New(status.Deny), nil)
-	c.Abort()
-	return
-}
-
-// RequireToken 使用token验证身份，不依赖cookies.
-func RequireToken(c *gin.Context) {
-
-	uToken := c.Request.Header.Get(types.SATokenKey)
-	queryToken := c.Query("token")
-	if queryToken != "" && uToken == "" {
-		c.Request.Header.Add(types.SATokenKey, queryToken)
-	}
-
-	if session.GetUserByToken(c) != nil {
-		c.Next()
-		return
-	}
-	response.HandleResponse(c, errors.New(status.InvalidUserCredentials), nil)
 	c.Abort()
 	return
 }
@@ -163,11 +156,6 @@ func ValidateSCReq(c *gin.Context) {
 	logger.Debug("areaToken in request Header: ", accessToken)
 	ti, err := oauth.GetOauthServer().Manager.LoadAccessToken(accessToken)
 	if err != nil {
-		// 忽略掉areaToken 过期问题
-		if err.Error() == jwt.ErrTokenIsExpired.Error() {
-			c.Next()
-			return
-		}
 		err = errors.New(status.Deny)
 		response.HandleResponse(c, err, nil)
 		c.Abort()
@@ -175,7 +163,7 @@ func ValidateSCReq(c *gin.Context) {
 	}
 
 	// token 不过期时校验scope
-	if ti.GetScope() == types.ScopeGetTokenBySC.Scope {
+	if strings.Contains(ti.GetScope(), types.ScopeGetTokenBySC.Scope) {
 		c.Next()
 		return
 	}

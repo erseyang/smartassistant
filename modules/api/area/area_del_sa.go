@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	errors2 "errors"
 	"fmt"
+	"github.com/zhiting-tech/smartassistant/modules/api/homebridge"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -99,8 +100,15 @@ func AreaDelSa(c *gin.Context) {
 			return
 		}
 	}
+
+	// 删除homeBridge授权
+	if err = homebridge.UnbindHomeBridge(c); err != nil {
+		return
+	}
+
 	// 删除网盘
 	resp, err = ProcessDelArea(c, req.AreaID, req.IsDelCloudDisk)
+
 	return
 }
 

@@ -2,8 +2,11 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strconv"
+	"sync/atomic"
+	"time"
 
 	"github.com/zhiting-tech/smartassistant/modules/config"
 	"github.com/zhiting-tech/smartassistant/pkg/datatunnel/v2"
@@ -11,6 +14,23 @@ import (
 	"github.com/zhiting-tech/smartassistant/pkg/datatunnel/v2/proto"
 	"github.com/zhiting-tech/smartassistant/pkg/logger"
 )
+
+var (
+	proxyControlClient atomic.Value
+)
+
+func GetProxyControlClient() *datatunnel.ProxyControlClient {
+	value := proxyControlClient.Load()
+	if value == nil {
+		return nil
+	} else {
+		if _, ok := value.(*datatunnel.ProxyControlClient); ok {
+			return value.(*datatunnel.ProxyControlClient)
+		} else {
+			return nil
+		}
+	}
+}
 
 func RunProxyClient(ctx context.Context) {
 	client := datatunnel.NewProxyControlClient(
@@ -53,5 +73,29 @@ func RunProxyClient(ctx context.Context) {
 		})
 	}
 
+	proxyControlClient.Store(client)
 	client.Run(ctx, config.GetConf().Datatunnel.ControlServerAddr)
+}
+
+func AllowTempConnCert(expireTime time.Duration) (err error) {
+
+	var (
+		pcsc *control.ProxyControlStreamContext
+	)
+
+	if GetProxyControlClient() == nil {
+		return errors.New("proxy control client not init")
+	}
+
+	if pcsc, err = GetProxyControlClient().GetCurrentPCSC(); err != nil {
+		return
+	}
+
+	return GetProxyControlClient().AllowTempConnCert(
+		pcsc,
+		&proto.TempConnectionCertRequest{
+			SaId:       config.GetConf().SmartAssistant.ID,
+			ExpireTime: float64(expireTime),
+		},
+	)
 }

@@ -33,20 +33,24 @@ func (d *device) ID() string {
 
 // WaitOnline 等待直到设备在线
 func (d *device) WaitOnline(ctx context.Context) error {
-	logger.Debugf("%s online waiting...", d.ID())
-
+	go d.healthCheck()
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Second*30)
 		defer cancel()
 	}
 	ticker := time.NewTicker(time.Millisecond * 500)
+	defer ticker.Stop()
+	healthCheckTicker := time.NewTicker(time.Second * 2)
+	defer healthCheckTicker.Stop()
 	for {
 		select {
 		case <-ticker.C:
 			if d.IsOnline() {
 				return nil
 			}
+		case <-healthCheckTicker.C:
+			go d.healthCheck()
 		case <-ctx.Done():
 			return fmt.Errorf("%s wait online timeout", d.ID())
 		}
@@ -65,8 +69,6 @@ func (d *device) HealthCheck() {
 }
 
 func (d *device) healthChecking() {
-	logger.Debugf("%s start health check", d.ID())
-
 	// 马上发起一次请求
 	if err := d.healthCheck(); err != nil {
 		logger.Errorf("%s health check err: %s", d.ID(), err.Error())
@@ -75,7 +77,6 @@ func (d *device) healthChecking() {
 	for {
 		select {
 		case <-d.closed:
-			logger.Debugf("%s health check done", d.ID())
 			return
 		case <-healthCheckTicker.C:
 			if err := d.healthCheck(); err != nil {
@@ -104,12 +105,12 @@ func (d *device) healthCheck() error {
 		"online":    resp.Online,
 	}
 	if !d.IsOnline() && resp.Online { // online
-		logger.Infof("%s back to online", d.ID())
+		// logger.Infof("%s back to online", d.ID())
 		event2.Notify(em)
 	}
 
 	if d.IsOnline() && !resp.Online { // offline
-		logger.Infof("%s offline", d.ID())
+		// logger.Infof("%s offline", d.ID())
 		event2.Notify(em)
 	}
 
@@ -162,7 +163,6 @@ func (d *device) GetAttributes(ctx context.Context) (das thingmodel.ThingModel, 
 	if err != nil {
 		return
 	}
-	// logger.Debugf("GetInstances resp: %#v\n", resp)
 	das = ParseAttrsResp(resp)
 	return
 }
@@ -199,7 +199,10 @@ func (d *device) OTA(ctx context.Context, firmwareURL string) (err error) {
 }
 
 func (d *device) Close() (err error) {
-	d.closed <- struct{}{}
-	close(d.closed)
+	select {
+	case d.closed <- struct{}{}:
+		close(d.closed)
+	default:
+	}
 	return nil
 }

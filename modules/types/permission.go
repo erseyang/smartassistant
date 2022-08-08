@@ -19,67 +19,68 @@ const (
 )
 
 type Permission struct {
-	Name      string `json:"name"`
-	Action    string `json:"action"`    // 动作
-	Target    string `json:"target"`    // 对象
-	Attribute string `json:"attribute"` // 属性
+	ServiceName string `json:"service_name,omitempty"` // service名，仅针对设备属性权限
+	Name        string `json:"name"`                   // attribute
+	Action      string `json:"action"`                 // 动作
+	Target      string `json:"target"`                 // 对象
+	Attribute   string `json:"attribute"`              // 属性
 }
 
 // 设备
 var (
-	DeviceAdd         = Permission{"添加设备", ActionAdd, "device", ""}
-	DeviceUpdate      = Permission{"修改设备", ActionUpdate, "device", ""}
-	DeviceControl     = Permission{"控制设备", ActionControl, "device", ""}
-	DeviceDelete      = Permission{"删除设备", ActionDelete, "device", ""}
-	DeviceUpdateOrder = Permission{"设备排序", ActionUpdate, "device", "order"}
+	DeviceAdd         = Permission{Name: "添加设备", Action: ActionAdd, Target: "device"}
+	DeviceUpdate      = Permission{Name: "修改设备", Action: ActionUpdate, Target: "device"}
+	DeviceControl     = Permission{Name: "控制设备", Action: ActionControl, Target: "device"}
+	DeviceDelete      = Permission{Name: "删除设备", Action: ActionDelete, Target: "device"}
+	DeviceUpdateOrder = Permission{Name: "设备排序", Action: ActionUpdate, Target: "device", Attribute: "order"}
 )
 
 // 家庭/公司
 var (
-	AreaGetCode          = Permission{"生成邀请码", ActionGet, "area", "invite_code"}
-	AreaUpdateName       = Permission{"修改家庭名称", ActionUpdate, "area", "name"}
-	AreaUpdateMemberRole = Permission{"修改成员角色", ActionUpdate, "area", "member_role"}
-	AreaDelMember        = Permission{"删除成员", ActionDelete, "area", "member"}
+	AreaGetCode          = Permission{Name: "生成邀请码", Action: ActionGet, Target: "area", Attribute: "invite_code"}
+	AreaUpdateName       = Permission{Name: "修改家庭名称", Action: ActionUpdate, Target: "area", Attribute: "name"}
+	AreaUpdateMemberRole = Permission{Name: "修改成员角色", Action: ActionUpdate, Target: "area", Attribute: "member_role"}
+	AreaDelMember        = Permission{Name: "删除成员", Action: ActionDelete, Target: "area", Attribute: "member"}
 )
 
 // 公司
 var (
-	AreaUpdateMemberDepartment = Permission{"修改成员部门", ActionUpdate, "area", "member_department"}
-	AreaUpdateCompanyName      = Permission{"修改公司名称", ActionUpdate, "area", "company_name"}
+	AreaUpdateMemberDepartment = Permission{Name: "修改成员部门", Action: ActionUpdate, Target: "area", Attribute: "member_department"}
+	AreaUpdateCompanyName      = Permission{Name: "修改公司名称", Action: ActionUpdate, Target: "area", Attribute: "company_name"}
 )
 
 // 房间/区域
 var (
-	LocationAdd         = Permission{"添加房间/区域", ActionAdd, "location", ""}
-	LocationUpdateOrder = Permission{"调整顺序", ActionUpdate, "location", "order"}
-	LocationUpdateName  = Permission{"修改房间名称", ActionUpdate, "location", "name"}
-	LocationGet         = Permission{"查看房间详情", ActionGet, "location", ""}
-	LocationDel         = Permission{"删除房间", ActionDelete, "location", ""}
+	LocationAdd         = Permission{Name: "添加房间/区域", Action: ActionAdd, Target: "location"}
+	LocationUpdateOrder = Permission{Name: "调整顺序", Action: ActionUpdate, Target: "location", Attribute: "order"}
+	LocationUpdateName  = Permission{Name: "修改房间名称", Action: ActionUpdate, Target: "location", Attribute: "name"}
+	LocationGet         = Permission{Name: "查看房间详情", Action: ActionGet, Target: "location"}
+	LocationDel         = Permission{Name: "删除房间", Action: ActionDelete, Target: "location"}
 )
 
 // 角色
 var (
-	RoleGet    = Permission{"查看角色列表", ActionGet, "role", ""}
-	RoleAdd    = Permission{"新增角色", ActionAdd, "role", ""}
-	RoleUpdate = Permission{"编辑角色", ActionUpdate, "role", ""}
-	RoleDel    = Permission{"删除角色", ActionDelete, "role", ""}
+	RoleGet    = Permission{Name: "查看角色列表", Action: ActionGet, Target: "role"}
+	RoleAdd    = Permission{Name: "新增角色", Action: ActionAdd, Target: "role"}
+	RoleUpdate = Permission{Name: "编辑角色", Action: ActionUpdate, Target: "role"}
+	RoleDel    = Permission{Name: "删除角色", Action: ActionDelete, Target: "role"}
 )
 
 // 场景
 var (
-	SceneAdd     = Permission{"新增场景", ActionAdd, "scene", ""}
-	SceneUpdate  = Permission{"修改场景", ActionUpdate, "scene", ""}
-	SceneDel     = Permission{"删除场景", ActionDelete, "scene", ""}
-	SceneControl = Permission{"控制场景", ActionControl, "scene", ""}
+	SceneAdd     = Permission{Name: "新增场景", Action: ActionAdd, Target: "scene"}
+	SceneUpdate  = Permission{Name: "修改场景", Action: ActionUpdate, Target: "scene"}
+	SceneDel     = Permission{Name: "删除场景", Action: ActionDelete, Target: "scene"}
+	SceneControl = Permission{Name: "控制场景", Action: ActionControl, Target: "scene"}
 )
 
 // 部门
 var (
-	DepartmentAdd         = Permission{"添加部门", ActionAdd, "department", ""}
-	DepartmentUpdateOrder = Permission{"调整部门顺序", ActionUpdate, "department", "order"}
-	DepartmentGet         = Permission{"查看部门详情", ActionGet, "department", ""}
-	DepartmentAddUser     = Permission{"添加成员", ActionAdd, "department", "user"}
-	DepartmentUpdate      = Permission{"部门设置", ActionUpdate, "department", ""}
+	DepartmentAdd         = Permission{Name: "添加部门", Action: ActionAdd, Target: "department"}
+	DepartmentUpdateOrder = Permission{Name: "调整部门顺序", Action: ActionUpdate, Target: "department", Attribute: "order"}
+	DepartmentGet         = Permission{Name: "查看部门详情", Action: ActionGet, Target: "department"}
+	DepartmentAddUser     = Permission{Name: "添加成员", Action: ActionAdd, Target: "department", Attribute: "user"}
+	DepartmentUpdate      = Permission{Name: "部门设置", Action: ActionUpdate, Target: "department"}
 )
 
 var (
@@ -106,16 +107,16 @@ func DeviceTarget(deviceID int) string {
 
 func NewDeviceDelete(deviceID int) Permission {
 	target := DeviceTarget(deviceID)
-	return Permission{"删除设备", ActionDelete, target, ""}
+	return Permission{Name: "删除设备", Action: ActionDelete, Target: target}
 }
 func NewDeviceUpdate(deviceID int) Permission {
 	target := DeviceTarget(deviceID)
-	return Permission{"修改设备", ActionUpdate, target, ""}
+	return Permission{Name: "修改设备", Action: ActionUpdate, Target: target}
 }
 
 func NewDeviceManage(deviceID int, name string, attr string) Permission {
 	target := DeviceTarget(deviceID)
-	return Permission{name, ActionManage, target, attr}
+	return Permission{Name: name, Action: ActionManage, Target: target, Attribute: attr}
 }
 
 func NewDeviceFwUpgrade(deviceID int) Permission {

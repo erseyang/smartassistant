@@ -59,12 +59,13 @@ mkdir -p data/zt-smartassistant/data/smartassistant
 #### 初始化smartassistant账号
 
 请求方法：POST
-请求url： http://localhost:37965/api/devices
+请求url： http://localhost:37965/api/sa
 请求参数：
 ``` json
 {
     "device": {
-        "model": "smart_assistant"
+        "model": "MH-SA00DCLB001W",
+        "area_type":1
     }
 }
 ```

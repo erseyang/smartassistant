@@ -1,11 +1,7 @@
 package device
 
 import (
-	"sort"
-
 	"github.com/gin-gonic/gin"
-	"github.com/mozillazg/go-pinyin"
-
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/plugin"
 )
@@ -32,14 +28,23 @@ type MajorResp struct {
 	Types `json:"types"`
 }
 
-var majorTypes = map[plugin.DeviceType]string{
-	plugin.TypeLight:          "照明",
-	plugin.TypeSwitch:         "开关",
-	plugin.TypeOutlet:         "插座",
-	plugin.TypeRoutingGateway: "路由网关",
-	plugin.TypeSecurity:       "安防",
-	plugin.TypeSensor:         "传感器",
-	plugin.TypeLifeElectric:   "生活电器",
+var majorTypes = []Type{
+	{"照明", plugin.TypeLight},
+	{"插座", plugin.TypeOutlet},
+	{"开关", plugin.TypeSwitch},
+	{"传感器", plugin.TypeSensor},
+	{"路由网关", plugin.TypeRoutingGateway},
+	{"安防", plugin.TypeSecurity},
+	{"生活电器", plugin.TypeLifeElectric},
+}
+
+func getParentType(parentType plugin.DeviceType) (t Type, ok bool) {
+	for _, m := range majorTypes {
+		if m.Type == parentType {
+			return m, true
+		}
+	}
+	return Type{}, false
 }
 
 // MajorTypeList 获取主分类
@@ -55,59 +60,26 @@ func MajorTypeList(c *gin.Context) {
 	}()
 
 	configs := plugin.GetGlobalClient().Configs()
-	m := make(map[plugin.DeviceType]string, 0)
+	m := make(map[plugin.DeviceType]Type, 0)
 	for _, plgConf := range configs {
 		for _, d := range plgConf.SupportDevices {
 			if d.Provisioning == "" { // 没有配置置网页则忽略
 				continue
 			}
 
-			pType := minorTypes[d.Type].ParentType
-			if pType == "" {
+			pType, ok := getCurrentType(d.Type)
+			if !ok || pType.ParentType == "" {
 				continue
 			}
-
-			m[pType] = majorTypes[pType]
+			if v, ok := getParentType(pType.ParentType); ok {
+				m[pType.ParentType] = v
+			}
 		}
 	}
 
-	for k, v := range m {
-		resp.Types = append(resp.Types, Type{v, k})
+	for _, mt := range majorTypes {
+		if _, ok := m[mt.Type]; ok {
+			resp.Types = append(resp.Types, mt)
+		}
 	}
-
-	sort.Sort(resp.Types) // 按拼音首字母A-Z排序
-}
-
-// 获取首字母Ascii码
-func getInitialAscii(s string) int {
-	ascii := []rune(s)
-	return int(ascii[0])
-}
-
-// getInitialPinYin 获取拼音首字母
-func getInitialPinyin(s string) string {
-	py := pinyin.NewArgs()
-	py.Style = pinyin.FirstLetter
-
-	p := pinyin.Pinyin(s, py) // 获取拼音
-
-	return p[0][0]
-}
-
-func (t Types) Len() int {
-	return len(t)
-}
-
-func (t Types) Swap(i, j int) {
-	t[i], t[j] = t[j], t[i]
-}
-
-func (t Types) Less(i, j int) bool {
-	iPinyin := getInitialPinyin(t[i].Name)
-	iAscii := getInitialAscii(iPinyin)
-
-	jPinyin := getInitialPinyin(t[j].Name)
-	jAsciiI := getInitialAscii(jPinyin)
-
-	return iAscii < jAsciiI
 }

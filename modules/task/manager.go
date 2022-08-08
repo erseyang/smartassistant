@@ -26,8 +26,13 @@ var (
 	managerOnce sync.Once
 )
 
+const (
+	sceneDefaultDelaySecond = 1 // 默认自动循环场景延迟秒数
+)
+
 type Manager interface {
 	AddSceneTask(entity.Scene)
+	AddSceneTaskForceDelay(entity.Scene) // 场景任务强制延迟频率控制
 	DeleteSceneTask(sceneID int)
 	RestartSceneTask(sceneID int) error
 	DeviceStateChange(d entity.Device, attr definer.AttributeEvent) error
@@ -83,8 +88,19 @@ func (st *sceneTasksManager) RemoveAll() {
 // LocalManager Task 服务
 type LocalManager struct {
 	queue        *queueServe
-	runningScene sync.Map // 正在执行的场景的id -> queue index
-	scenes       sync.Map // 保存queue中记录所有与entity.Scene相关的未执行的场景 sceneID -> *SceneTasks
+	runningScene sync.Map     // 正在执行的场景的id -> queue index
+	scenes       sync.Map     // 保存queue中记录所有与entity.Scene相关的未执行的场景 sceneID -> *SceneTasks
+	sceneRunTime sceneRunInfo // 记录各场景执行时间
+}
+
+type sceneRunInfo struct {
+	mutex   sync.Mutex
+	runData map[int]runData
+}
+
+type runData struct {
+	runningTime int64
+	hasNext     bool
 }
 
 func NewLocalManager() *LocalManager {
@@ -164,7 +180,8 @@ func (m *LocalManager) DeleteSceneTask(sceneID int) {
 }
 
 // addSceneTaskByID 根据场景id执行场景（执行或者开启时调用）
-func (m *LocalManager) addSceneTaskByID(sceneID int) error {
+// forceDelay 强制延迟执行控制频率
+func (m *LocalManager) addSceneTaskByID(sceneID int, forceDelay bool) error {
 	scene, err := entity.GetSceneInfoById(sceneID)
 	if err != nil {
 		if errors2.Is(err, gorm.ErrRecordNotFound) {
@@ -172,45 +189,72 @@ func (m *LocalManager) addSceneTaskByID(sceneID int) error {
 		}
 		return errors.Wrap(err, errors.InternalServerErr)
 	}
+	if forceDelay {
+		m.AddSceneTaskForceDelay(scene)
+		return nil
+	}
 	m.AddSceneTask(scene)
 	return nil
 }
 
 // AddSceneTask 添加场景任务（执行或者开启时调用）
 func (m *LocalManager) AddSceneTask(scene entity.Scene) {
-	m.AddSceneTaskWithTime(scene, time.Now())
+	if scene.AutoRun {
+		m.AddSceneTaskWithTime(scene, time.Now())
+	} else {
+		// 手动场景
+		m.ManualScene(scene, false)
+	}
+
 }
+
+// AddSceneTaskForceDelay 强制延迟场景任务
+func (m *LocalManager) AddSceneTaskForceDelay(scene entity.Scene) {
+	if scene.AutoRun {
+		m.AddSceneTaskWithTime(scene, time.Now())
+	} else {
+		// 强制频率控制的场景
+		if !m.checkScenesRunOnce(scene.ID){
+			return
+		}
+		// 手动场景
+		m.ManualScene(scene, true)
+	}
+}
+
 
 func (m *LocalManager) AddSceneTaskWithTime(scene entity.Scene, t time.Time) {
 	var task *Task
 	date := now.New(t)
-	if scene.AutoRun { // 开启自动场景
-		logger.Infof("open scene %d", scene.ID)
-		// 找到定时条件的时间
-		for _, c := range scene.SceneConditions {
-			if c.ConditionType == entity.ConditionTypeTiming {
+	// 开启自动场景
+	// 找到定时条件的时间
+	for _, c := range scene.SceneConditions {
+		if c.ConditionType == entity.ConditionTypeTiming {
 
-				// 获取任务今天的下次执行时间
-				execTime := date.BeginningOfDay().Add(c.TimingAt.Sub(now.New(c.TimingAt).BeginningOfDay()))
-				if execTime.Before(time.Now()) || execTime.After(date.EndOfDay()) {
-					logger.Debugf("now:%v,invalid next execute time:%v", time.Now(), execTime)
-					continue
-				}
-
-				if !IsConditionsSatisfied(scene, true) {
-					logger.Debugf("auto scene:%d's conditions not satisfied", scene.ID)
-					continue
-				}
-				task = NewTaskAt(m.wrapSceneFunc(scene), execTime)
-				m.pushTask(task, scene)
+			// 获取任务今天的下次执行时间
+			execTime := date.BeginningOfDay().Add(c.TimingAt.Sub(now.New(c.TimingAt).BeginningOfDay()))
+			if execTime.Before(time.Now()) || execTime.After(date.EndOfDay()) {
+				//logger.Debugf("now:%v,invalid next execute time:%v", time.Now(), execTime)
 				continue
 			}
+
+			if !IsConditionsSatisfied(scene, true) {
+				//logger.Debugf("auto scene:%d's conditions not satisfied", scene.ID)
+				continue
+			}
+			task = NewTaskAt(m.wrapSceneFunc(scene, false), execTime)
+			m.pushTask(task, scene)
+			continue
 		}
-	} else { // 执行手动场景
-		logger.Infof("execute scene %d", scene.ID)
-		task = NewTask(m.wrapSceneFunc(scene), 0)
-		m.pushTask(task, scene)
 	}
+}
+
+// ManualScene 非自动场景
+// forceDelay 默认频率控制
+func (m *LocalManager) ManualScene(scene entity.Scene, forceDelay bool) {
+	var task *Task
+	task = NewTask(m.wrapSceneFunc(scene, forceDelay), 0)
+	m.pushTask(task, scene)
 }
 
 func (m *LocalManager) pushTask(task *Task, target interface{}) {
@@ -231,7 +275,7 @@ func (m *LocalManager) RestartSceneTask(sceneID int) error {
 		return nil
 	}
 	m.DeleteSceneTask(sceneID)
-	return m.addSceneTaskByID(sceneID)
+	return m.addSceneTaskByID(sceneID, false)
 }
 
 func (m *LocalManager) addRunningScene(sceneID int, queueIndex int) {
@@ -267,7 +311,6 @@ func (m *LocalManager) sceneTaskManageWrapper(task *Task, target interface{}) Wr
 				// 不存在则说明当前场景已经移除
 				value, ok := m.scenes.Load(scene.ID)
 				if !ok {
-					logger.Debugf("scene.ID %d is remove\n", scene.ID)
 					return nil
 				}
 				// 移除要执行的任务
@@ -283,7 +326,11 @@ func (m *LocalManager) sceneTaskManageWrapper(task *Task, target interface{}) Wr
 }
 
 // wrapSceneFunc  包装场景为 TaskFunc
-func (m *LocalManager) wrapSceneFunc(sc entity.Scene) (f TaskFunc) {
+// forceDelayAble 是否需要强制执行默认延迟
+func (m *LocalManager) wrapSceneFunc(sc entity.Scene, forceDelayAble bool) (f TaskFunc) {
+	var (
+		delayIc int
+	)
 	return func(t *Task) error {
 		scene, err := entity.GetSceneInfoById(sc.ID)
 		if err != nil {
@@ -300,7 +347,10 @@ func (m *LocalManager) wrapSceneFunc(sc entity.Scene) (f TaskFunc) {
 		// TODO 此代码达到其功能，需清理
 		m.addRunningScene(scene.ID, t.index)
 		for _, sceneTask := range scene.SceneTasks {
-			delay := time.Duration(sceneTask.DelaySeconds) * time.Second
+			if forceDelayAble && sceneTask.DelaySeconds == 0 {
+				delayIc = sceneDefaultDelaySecond
+			}
+			delay := time.Duration(sceneTask.DelaySeconds+delayIc) * time.Second
 			task := NewTask(m.wrapTaskToFunc(sceneTask), delay).WithParent(t)
 
 			if sceneTask.Type == entity.TaskTypeSmartDevice { // 控制设备
@@ -320,6 +370,12 @@ func (m *LocalManager) wrapSceneFunc(sc entity.Scene) (f TaskFunc) {
 				}
 			}
 		}
+		// 场景执行结束解除占用状态
+		if forceDelayAble {
+			// 延迟指定时间
+			time.Sleep(time.Second * sceneDefaultDelaySecond)
+			m.relieveRunSceneStatus(scene.ID)
+		}
 		return nil
 	}
 }
@@ -328,12 +384,12 @@ func (m *LocalManager) wrapSceneFunc(sc entity.Scene) (f TaskFunc) {
 func (m *LocalManager) wrapTaskToFunc(task entity.SceneTask) (f TaskFunc) {
 	return func(t *Task) error {
 		// TODO 判断权限、判断场景是否有修改
-		logger.Debugf("execute task:%d,type:%d\n", task.ID, task.Type)
+		//logger.Debugf("execute task:%d,type:%d\n", task.ID, task.Type)
 		switch task.Type {
 		case entity.TaskTypeSmartDevice: // 控制设备
 			return m.executeDevice(task)
 		case entity.TaskTypeManualRun: // 执行场景
-			return m.addSceneTaskByID(task.ControlSceneID)
+			return m.addSceneTaskByID(task.ControlSceneID, true)
 		case entity.TaskTypeEnableAutoRun: // 开启场景
 			return m.setSceneOn(task.ControlSceneID)
 		case entity.TaskTypeDisableAutoRun: // 关闭场景
@@ -360,8 +416,8 @@ func (m *LocalManager) executeDevice(task entity.SceneTask) (err error) {
 			}
 			return errors.Wrap(err, http.StatusInternalServerError)
 		}
-		logger.Debugf("execute device command device id:%d instance id:%d attr:%s val:%v",
-			device.ID, device.IID, "d.Attribute.Attribute", d.Attribute.Val)
+		//logger.Debugf("execute device command device id:%d instance id:%s attr:%s val:%v",
+		//	device.ID, device.IID, "d.Attribute.Attribute", d.Attribute.Val)
 
 		setReq := sdk.SetRequest{
 			Attributes: []sdk.SetAttribute{
@@ -371,7 +427,7 @@ func (m *LocalManager) executeDevice(task entity.SceneTask) (err error) {
 					Val: d.Attribute.Val,
 				},
 			}}
-		err = plugin.SetAttributes(context.Background(), device.PluginID, device.AreaID, setReq)
+		err = controlDeviceFailRetry(device, setReq)
 		if err != nil {
 			identify := plugin.Identify{
 				PluginID: device.PluginID,
@@ -384,12 +440,34 @@ func (m *LocalManager) executeDevice(task entity.SceneTask) (err error) {
 	return
 }
 
+// 控制设备失败重试2S内最多重试三次
+func controlDeviceFailRetry(device entity.Device, setReq sdk.SetRequest) (err error) {
+	err = plugin.SetAttributes(context.Background(), device.PluginID, device.AreaID, setReq)
+	if err == nil {
+		return
+	}
+	timer := time.NewTimer(time.Second * 2)
+	defer timer.Stop()
+	for i := 0; i < 3; i++ {
+		select {
+		case <-timer.C:
+			return
+		default:
+			err = plugin.SetAttributes(context.Background(), device.PluginID, device.AreaID, setReq)
+			if err == nil {
+				return
+			}
+		}
+	}
+	return
+}
+
 // SetSceneOn 开启场景
 func (m *LocalManager) setSceneOn(sceneID int) (err error) {
 	if err = entity.SwitchAutoSceneByID(sceneID, true); err != nil {
 		return
 	}
-	if err := m.addSceneTaskByID(sceneID); err != nil {
+	if err := m.addSceneTaskByID(sceneID, true); err != nil {
 		logger.Error(err)
 	}
 	return
@@ -416,20 +494,61 @@ func (m *LocalManager) DeviceStateChange(d entity.Device, ac definer.AttributeEv
 
 	// 遍历并包装场景为任务
 	for _, scene := range scenes {
+		// 判断该执行是否需要限制
+		if !m.checkScenesRunOnce(scene.ID) {
+			continue // 无需执行
+		}
 		scene, _ = entity.GetSceneInfoById(scene.ID)
 		// 全部满足且有定时条件则不执行
 		if scene.IsMatchAllCondition() && scene.HaveTimeCondition() {
-			logger.Debugf("device %d state %d changed but scenes %d not match time conditoin,ignore\n",
-				deviceID, ac.AID, scene.ID)
+			//logger.Debugf("device %d state %d changed but scenes %d not match time conditoin,ignore\n",
+			//	deviceID, ac.AID, scene.ID)
 			continue
 		}
 
 		if !IsConditionsSatisfied(scene, false) {
-			logger.Debugf("auto scene:%d's conditions not satisfied", scene.ID)
+			//logger.Debugf("auto scene:%d's conditions not satisfied", scene.ID)
 			continue
 		}
-		t := NewTask(m.wrapSceneFunc(scene), 0)
+		t := NewTask(m.wrapSceneFunc(scene, true), 0)
 		m.pushTask(t, scene)
 	}
 	return
+}
+
+// 执行时间限制单位时间s内同一场景只允许执行一次
+func (m *LocalManager) checkScenesRunOnce(sceneId int)  bool {
+	m.sceneRunTime.mutex.Lock()
+	defer m.sceneRunTime.mutex.Unlock()
+	// 初始化
+	if m.sceneRunTime.runData == nil {
+		m.sceneRunTime.runData = make(map[int]runData)
+	}
+	// 场景上次执行时间间隔判断
+	nowTime := time.Now().Unix()
+	sceneRunData := m.sceneRunTime.runData[sceneId]
+	// 没有时间限制则或有scene正在执行
+	if sceneRunData.runningTime+sceneDefaultDelaySecond > nowTime && sceneRunData.hasNext {
+		return false
+	} else {
+		// 不存在或者可以执行标记当前场景为执行状态
+		m.sceneRunTime.runData[sceneId] = runData{
+			runningTime: nowTime,
+			hasNext:     true,
+		}
+		return true
+	}
+}
+
+func (m *LocalManager) relieveRunSceneStatus(sceneId int) {
+	m.sceneRunTime.mutex.Lock()
+	defer m.sceneRunTime.mutex.Unlock()
+	sceneRunData, ok := m.sceneRunTime.runData[sceneId]
+	if !ok {
+		m.sceneRunTime.runData[sceneId] = runData{
+			hasNext: false,
+		}
+	}
+	sceneRunData.hasNext = false
+	m.sceneRunTime.runData[sceneId] = sceneRunData
 }

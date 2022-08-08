@@ -35,13 +35,14 @@ type Brand struct {
 }
 
 type Plugin struct {
-	ID      int    `json:"id"`
-	UID     string `json:"uid"`
-	Name    string `json:"name"`
-	Image   string `json:"image"`
-	Version string `json:"version"`
-	Brand   string `json:"brand"`
-	Intro   string `json:"intro"`
+	ID       int    `json:"id"`
+	UID      string `json:"uid"`
+	Name     string `json:"name"`
+	Image    string `json:"image"`
+	Version  string `json:"version"`
+	Brand    string `json:"brand"`
+	Intro    string `json:"intro"`
+	UpdateAt int64  `json:"update_at"` //  插件更新时间
 }
 
 type Device struct {
@@ -143,7 +144,6 @@ func GetBrandInfoWithContext(ctx context.Context, brandName string) (brand Brand
 	}
 
 	any := jsoniter.Get(data, "data")
-	logger.Debug(any.ToString())
 	any.ToVal(&brand)
 	err = any.LastError()
 	return

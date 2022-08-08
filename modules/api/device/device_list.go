@@ -1,19 +1,21 @@
 package device
 
 import (
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
+	"github.com/zhiting-tech/smartassistant/modules/plugin"
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/device"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
-	"github.com/zhiting-tech/smartassistant/modules/plugin"
+
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
-	"github.com/zhiting-tech/smartassistant/pkg/logger"
+
 	"github.com/zhiting-tech/smartassistant/pkg/thingmodel"
 )
 
@@ -175,15 +177,19 @@ func ListLocationDevices(c *gin.Context) {
 func WrapDevices(c *gin.Context, devices []entity.Device, listType listType) (result []Device, err error) {
 
 	u := session.Get(c)
-	up, err := entity.GetUserPermissions(u.UserID)
+	up, err := u.GetPermissions()
 	if err != nil {
 		return
 	}
 
-	pluginToken, err := oauth.GetUserPluginToken(u.UserID, c.Request, u.AreaID)
-	if err != nil {
-		return nil, err
+	var pluginToken string
+	if !u.IsClient() {
+		pluginToken, err = oauth.GetUserPluginToken(u.UserID, c.Request, u.AreaID)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	for _, d := range devices {
 		// 有可以控制权限的设备（场景的执行任务页面使用），只显示有控制权限的
 		if listType == WriteDevice && !d.IsControllable(up) {

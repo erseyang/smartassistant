@@ -1,6 +1,7 @@
 package user
 
 import (
+	"github.com/zhiting-tech/smartassistant/modules/maintenance"
 	"strconv"
 	"time"
 
@@ -89,9 +90,12 @@ func (req *updateUserReq) Validate(updateUid, loginId int, areaType entity.AreaT
 			hashNewPassword := hash.GenerateHashedPassword(*req.Password, salt)
 			updateUser.Password = hashNewPassword
 		} else {
-			if userInfo.Password != hash.GenerateHashedPassword(*req.OldPassword, userInfo.Salt) {
-				err = errors.New(status.OldPasswordErr)
-				return
+			rd := maintenance.DirectResetProPassword()
+			if !rd {
+				if userInfo.Password != hash.GenerateHashedPassword(*req.OldPassword, userInfo.Salt) {
+					err = errors.New(status.OldPasswordErr)
+					return
+				}
 			}
 			updateUser.Password = hash.GenerateHashedPassword(*req.Password, userInfo.Salt)
 			updateUser.PasswordUpdateTime = time.Now()

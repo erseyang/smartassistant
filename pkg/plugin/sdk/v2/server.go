@@ -52,8 +52,22 @@ func (p Server) OTA(req *proto.OTAReq, server proto.Plugin_OTAServer) error {
 				Iid:  req.Iid,
 				Step: int32(v.Step),
 			}
+			if v.Step >= 100 {
+				// ota成功后，设备将会重连
+				var d *device
+				d, err = p.Manager.GetDevice(req.Iid)
+				if err != nil {
+					logrus.Errorf("OTA get device err: %s", err.Error())
+					return err
+				}
+				d.mutex.Lock()
+				d.connected = false
+				d.mutex.Unlock()
+				p.Manager.HealthCheck(req.Iid)
+			}
 			if err = server.Send(&resp); err != nil {
 				logrus.Errorf("send ota response error: %s", err.Error())
+				return err
 			}
 		}
 	}
@@ -80,6 +94,7 @@ func (p Server) Discover(request *emptypb.Empty, server proto.Plugin_DiscoverSer
 		pd := proto.Device{
 			Iid:          d.Info().IID,
 			Model:        d.Info().Model,
+			Name:         d.Info().Name,
 			Manufacturer: d.Info().Manufacturer,
 			Type:         d.Info().Type,
 			AuthRequired: authRequired,
@@ -153,7 +168,7 @@ func (p Server) GetInstances(context context.Context, request *proto.GetInstance
 	if err != nil {
 		return
 	}
-	d, err := p.Manager.getDevice(request.Iid)
+	d, err := p.Manager.GetDeviceInterface(request.Iid)
 	if err != nil {
 		return
 	}
@@ -294,7 +309,8 @@ func NewPluginServer(discoverFunc DiscoverFunc, opts ...OptionFunc) *Server {
 		rand.Read(bytes)
 		domain = hex.EncodeToString(bytes)
 	}
-	trace.Init(domain)
+	traceDebug := os.Getenv("PLUGIN_MODE") == "debug"
+	trace.Init(domain, trace.CustomSamplerOpt(traceDebug))
 	route := gin.New()
 	route.Use(gin.Recovery())
 	path := fmt.Sprintf("api/plugin/%s", domain)

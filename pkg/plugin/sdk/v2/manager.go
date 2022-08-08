@@ -75,7 +75,7 @@ func (m *Manager) Unsubscribe(ch EventChan) {
 	delete(m.eventChannels, ch)
 }
 
-// InitOrUpdateDevice 添加或更新设备
+// InitOrUpdateDevice 添加或更新设备, 更新设备将会是以重连的形式更新，原有设备会被回收资源
 func (m *Manager) InitOrUpdateDevice(d Device) error {
 	if d == nil {
 		return errors.New("device is nil")
@@ -96,7 +96,7 @@ func (m *Manager) InitOrUpdateDevice(d Device) error {
 		}
 		if addrChange || disconnected {
 			m.devices.Store(d.Info().IID, newDevice(d))
-			return nil
+			return oldDevice.Close()
 		}
 
 		return nil
@@ -108,7 +108,7 @@ func (m *Manager) InitOrUpdateDevice(d Device) error {
 
 func (m *Manager) IsOTASupport(iid string) (ok bool, err error) {
 
-	d, err := m.getDevice(iid)
+	d, err := m.GetDeviceInterface(iid)
 	if err != nil {
 		return
 	}
@@ -123,7 +123,7 @@ func (m *Manager) IsOTASupport(iid string) (ok bool, err error) {
 
 func (m *Manager) OTA(iid, firmwareURL string) (ch chan OTAResp, err error) {
 
-	d, err := m.getDevice(iid)
+	d, err := m.GetDeviceInterface(iid)
 	if err != nil {
 		return
 	}
@@ -159,7 +159,14 @@ func (m *Manager) Connect(d *device, params map[string]interface{}) (err error) 
 
 	logrus.Debugf("device %s connected, define device's thing model", d.Info().IID)
 	d.df = definer.NewThingModelDefiner(d.Info().IID, m.notifyAttr, m.notifyThingModelChange)
-	d.Define(d.df)
+	err = d.Define(d.df)
+	if err != nil {
+		err2 := d.Close()
+		if err2 != nil {
+			logrus.Errorf("device close err: %s", err2)
+		}
+		return err
+	}
 	if d.df != nil {
 		d.df.SetNotifyFunc()
 		tm := d.df.ThingModel()
@@ -180,17 +187,21 @@ func (m *Manager) Connect(d *device, params map[string]interface{}) (err error) 
 func (m *Manager) Disconnect(iid string, params map[string]interface{}) (err error) {
 
 	defer m.devices.Delete(iid)
-	d, err := m.getDevice(iid)
+	d, err := m.GetDeviceInterface(iid)
 	if err != nil {
 		return
 	}
-
 	if ad, authRequired := d.(AuthDevice); authRequired && ad.IsAuth() {
 		if ad.Info().IID == iid {
-			return ad.RemoveAuthorization(params)
+			if err = ad.RemoveAuthorization(params); err != nil {
+				return
+			}
 		}
 	}
-	return d.Disconnect(iid)
+	if err = d.Disconnect(iid); err != nil {
+		return
+	}
+	return d.Close()
 }
 
 func (m *Manager) HealthCheck(iid string) bool {
@@ -209,14 +220,7 @@ func (m *Manager) HealthCheck(iid string) bool {
 
 	// 需要授权且未授权则更新物模型
 	if ad, ok := d.Device.(AuthDevice); ok && !ad.IsAuth() {
-
-		go func() {
-			tme := definer.ThingModelEvent{
-				ThingModel: thingmodel.ThingModel{},
-				IID:        iid,
-			}
-			m.notifyThingModelChange(iid, tme)
-		}()
+		go m.notifyThingModelChange(iid)
 		return false
 	}
 
@@ -254,10 +258,17 @@ func (m *Manager) notifyAttr(attrEvent definer.AttributeEvent) (err error) {
 }
 
 // notifyThingModelChange iid是桥接设备iid，tme.IID是实际更新的设备iid
-func (m *Manager) notifyThingModelChange(iid string, tme definer.ThingModelEvent) (err error) {
+func (m *Manager) notifyThingModelChange(iid string) (err error) {
 
-	tme.ThingModel.OTASupport, err = m.IsOTASupport(iid)
 	d, err := m.GetDevice(iid)
+	if err != nil {
+		return
+	}
+	tme := definer.ThingModelEvent{IID: iid}
+	if d.df != nil {
+		tme.ThingModel = d.df.ThingModel()
+	}
+	tme.ThingModel.OTASupport, err = m.IsOTASupport(iid)
 	if err != nil {
 		return
 	}
@@ -266,9 +277,6 @@ func (m *Manager) notifyThingModelChange(iid string, tme definer.ThingModelEvent
 	if tme.ThingModel.AuthRequired {
 		tme.ThingModel.IsAuth = ad.IsAuth()
 		tme.ThingModel.AuthParams = ad.AuthParams()
-	}
-	if err != nil {
-		return
 	}
 	data, _ := json.Marshal(tme)
 	ev := Event{
@@ -321,7 +329,7 @@ func (m *Manager) getDefiner(iid string) (df *definer.Definer, err error) {
 	return d.df, nil
 }
 
-func (m *Manager) getDevice(iid string) (Device, error) {
+func (m *Manager) GetDeviceInterface(iid string) (Device, error) {
 
 	d, err := m.GetDevice(iid)
 	if err != nil {
@@ -340,4 +348,14 @@ func (m *Manager) GetDevice(iid string) (*device, error) {
 		return d, nil
 	}
 	return nil, fmt.Errorf("%s: is not *device", iid)
+}
+
+func (m *Manager) GetDevices() (devices []Device) {
+	m.devices.Range(func(key, value interface{}) bool {
+		if d, ok := value.(*device); ok {
+			devices = append(devices, d.Device)
+		}
+		return true
+	})
+	return
 }

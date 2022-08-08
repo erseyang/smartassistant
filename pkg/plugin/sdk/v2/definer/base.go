@@ -24,6 +24,7 @@ type BaseService struct {
 	iid          string
 	_instance    *Instance
 	attributeMap map[string]*Attribute
+	name         string
 }
 
 func (b BaseService) Type() thingmodel.ServiceType {
@@ -35,6 +36,11 @@ func (b *BaseService) WithAttributes(attrTypes ...thingmodel.Attribute) *BaseSer
 	for _, attrType := range attrTypes {
 		b.WithAttribute(attrType)
 	}
+	return b
+}
+
+func (b *BaseService) WithName(name string) *BaseService {
+	b.name = name
 	return b
 }
 

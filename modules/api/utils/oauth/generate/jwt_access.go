@@ -12,7 +12,6 @@ import (
 	"gopkg.in/oauth2.v3"
 
 	"github.com/zhiting-tech/smartassistant/modules/entity"
-	"github.com/zhiting-tech/smartassistant/modules/types"
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
 )
@@ -24,7 +23,9 @@ var (
 
 // JWTAccessClaims jwt claims
 type JWTAccessClaims struct {
-	UserID          int    `json:"user_id,omitempty"`
+	UserID int `json:"user_id,omitempty"`
+
+	// ExpiresAt 过期秒数，为0则不过期
 	ExpiresAt       int64  `json:"exp,omitempty"`
 	AreaID          uint64 `json:"area_id,omitempty"`
 	AccessCreateAt  int64  `json:"access_create_at,omitempty"`
@@ -37,6 +38,9 @@ type JWTAccessClaims struct {
 
 // Valid claims verification
 func (a *JWTAccessClaims) Valid() error {
+	if a.ExpiresAt == 0 {
+		return nil
+	}
 	createAt := a.AccessCreateAt
 	// 获取token的创建时间
 	if createAt == 0 {
@@ -83,14 +87,18 @@ func (a *JWTAccessGenerate) Token(data *oauth2.GenerateBasic, isGenRefresh bool)
 		areaID = user.AreaID
 	} else { // 客户端授权模式
 		key = data.Client.GetSecret()
+		client, err := entity.GetClientByClientID(data.TokenInfo.GetClientID())
+		if err != nil {
+			return "", "", nil
+		}
+		areaID = client.AreaID
 	}
 
 	claims := &JWTAccessClaims{
-		UserID:    userID,
-		AreaID:    areaID,
-		ClientID:  data.TokenInfo.GetClientID(),
-		Scope:     data.TokenInfo.GetScope(),
-		GrantType: data.Request.Header.Get(types.GrantType),
+		UserID:   userID,
+		AreaID:   areaID,
+		ClientID: data.TokenInfo.GetClientID(),
+		Scope:    data.TokenInfo.GetScope(),
 	}
 
 	claims.ExpiresAt = int64(data.TokenInfo.GetAccessExpiresIn().Seconds())
@@ -155,6 +163,11 @@ func ParseToken(tokenString string) (*JWTAccessClaims, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("signing method is invalid,method: %v", token.Header["alg"])
 		}
+
+		client, err := entity.GetClientByClientID(claims.ClientID)
+		if err != nil {
+			return nil, errors.New(status.InvalidUserCredentials)
+		}
 		var key string
 		if claims.UserID != 0 {
 			user, err := entity.GetUserByIDAndAreaID(claims.UserID, claims.AreaID)
@@ -173,10 +186,6 @@ func ParseToken(tokenString string) (*JWTAccessClaims, error) {
 				}
 			}
 		} else {
-			client, err := entity.GetClientByClientID(claims.ClientID)
-			if err != nil {
-				return nil, err
-			}
 			key = client.ClientSecret
 		}
 

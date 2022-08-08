@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	errors2 "errors"
 	"fmt"
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -18,7 +19,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"github.com/zhiting-tech/smartassistant/modules/api/setting"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/config"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
@@ -63,7 +63,11 @@ func (req *AreaMigrationReq) ReBindWithContext(ctx context.Context, areaID uint6
 		return
 	}
 
-	token, err := setting.GetAreaAuthToken(areaID)
+	scClient, err := entity.GetSCClient(areaID)
+	if err != nil {
+		return
+	}
+	token, err := oauth.GetClientToken(scClient)
 	if err != nil {
 		return
 	}

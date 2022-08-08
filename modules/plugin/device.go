@@ -40,14 +40,22 @@ func OTA(ctx context.Context, areaID uint64, pluginID, iid, firmwareURL string) 
 
 func ThingModelToEntity(iid string, tm thingmodel.ThingModel, pluginID string, areaID uint64) (d entity.Device, err error) {
 	info, err := tm.GetInfo(iid)
+	if err != nil {
+		return
+	}
 	tmJson, err := json.Marshal(tm)
 	if err != nil {
 		return
 	}
 	conf := GetGlobalClient().Config(pluginID).DeviceConfig(info.Model, info.Type)
 	name := conf.Name
+	// 优先级：conf.name -> info.name -> info.model
+	// TODO : 考虑整合此处获取name的方式，发现设备时name从协议获取
 	if conf.Name == "" {
-		name = info.Model
+		name = info.Name
+		if info.Name == "" {
+			name = info.Model
+		}
 	}
 	if info.Type == "" {
 		info.Type = conf.Type.String()
@@ -63,6 +71,7 @@ func ThingModelToEntity(iid string, tm thingmodel.ThingModel, pluginID string, a
 		AreaID:       areaID,
 		ThingModel:   tmJson,
 	}
+
 	shadow := entity.NewShadow()
 	for _, instance := range tm.Instances {
 		for _, srv := range instance.Services {
@@ -93,11 +102,11 @@ func InstanceToEntity(instance thingmodel.Instance, pluginID, pIID string, areaI
 	}
 
 	conf := GetGlobalClient().Config(pluginID).DeviceConfig(info.Model, info.Type)
-	if info.Name == "" {
+	if conf.Name != "" {
 		info.Name = conf.Name
-		if conf.Name == "" {
-			info.Name = info.Model
-		}
+	}
+	if info.Name == "" {
+		info.Name = info.Model
 	}
 
 	if info.Type == "" {

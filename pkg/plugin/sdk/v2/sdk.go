@@ -35,6 +35,20 @@ type MetaData struct {
 	SDKVersion string `json:"sdk_version"`
 }
 
+type ManagerDevice interface {
+	GetDeviceInterface(iid string) (Device, error)
+	GetDevices() (devices []Device)
+}
+
+var M ManagerDevice
+
+func GetDevice(iid string) (Device, error) {
+	return M.GetDeviceInterface(iid)
+}
+func GetDevices() (devices []Device) {
+	return M.GetDevices()
+}
+
 func Run(p *Server) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -51,6 +65,7 @@ func Run(p *Server) error {
 		}
 	}()
 
+	M = p.Manager
 	if err := runServer(ctx, p); err != nil {
 		logrus.Error(err)
 	}

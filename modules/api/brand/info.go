@@ -2,7 +2,6 @@ package brand
 
 import (
 	"context"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
@@ -29,6 +28,7 @@ type Plugin struct {
 	Info     string `json:"info"`
 	IsAdded  bool   `json:"is_added"`
 	IsNewest bool   `json:"is_newest"`
+	UpdateAt int64  `json:"update_at"`
 }
 
 // brandInfoReq 品牌详情接口请求参数
@@ -38,11 +38,10 @@ type brandInfoReq struct {
 
 // GetBrandInfoWithContext 获取品牌详情
 func GetBrandInfoWithContext(ctx context.Context, name string) (brand Brand, err error) {
-	brand.Plugins = make([]Plugin, 0)
-
 	brand = Brand{
 		Brand: cloud.Brand{Name: name},
 	}
+	brand.Plugins = make([]Plugin, 0)
 
 	var installedPlgs []entity.PluginInfo
 	installedPlgs, err = entity.GetInstalledPlugins()
@@ -54,16 +53,17 @@ func GetBrandInfoWithContext(ctx context.Context, name string) (brand Brand, err
 	for _, p := range installedPlgs {
 		installedPlgMap[p.PluginID] = p
 	}
-	brandInfo, err := cloud.GetBrandInfoWithContext(ctx, name)
+	brandInfo, err2 := cloud.GetBrandInfoWithContext(ctx, name)
 	// 请求sc失败则读取本地信息
-	if err != nil {
-		logger.Error(err)
+	if err2 != nil {
+		logger.Error(err2)
 
 		for _, p := range installedPlgs {
 			pp := Plugin{
 				ID:       p.PluginID,
 				Version:  p.Version,
 				Brand:    p.Brand,
+				Info:     p.Info,
 				IsAdded:  false,
 				IsNewest: false,
 			}
@@ -76,11 +76,12 @@ func GetBrandInfoWithContext(ctx context.Context, name string) (brand Brand, err
 	brand.LogoURL = brandInfo.LogoURL
 	for _, p := range brandInfo.Plugins {
 		pp := Plugin{
-			ID:      p.UID,
-			Name:    p.Name,
-			Version: p.Version,
-			Brand:   p.Brand,
-			Info:    p.Intro,
+			ID:       p.UID,
+			Name:     p.Name,
+			Version:  p.Version,
+			Brand:    p.Brand,
+			Info:     p.Intro,
+			UpdateAt: p.UpdateAt,
 		}
 		_, pp.IsAdded = installedPlgMap[p.UID]
 		if pp.IsAdded {

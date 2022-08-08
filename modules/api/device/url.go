@@ -2,6 +2,8 @@
 package device
 
 import (
+	errors2 "errors"
+	"gorm.io/gorm"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -58,6 +60,11 @@ func requireBelongsToUser(c *gin.Context) {
 
 	device, err := entity.GetDeviceByID(deviceID)
 	if err != nil {
+		if errors2.Is(err, gorm.ErrRecordNotFound) {
+			response.HandleResponse(c, errors.Wrap(err, status.DeviceNotExist), nil)
+			c.Abort()
+			return
+		}
 		response.HandleResponse(c, errors.Wrap(err, errors.InternalServerErr), nil)
 		c.Abort()
 		return

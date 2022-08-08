@@ -67,7 +67,7 @@ func (t *PubSubTrie) Subscribe(word string, fn SubscribeFunc) Subscriber {
 func (t *PubSubTrie) Publish(topic string, msg interface{}) {
 	node := t
 	length := len(topic)
-	logger.Debugf("publish %s", topic)
+	//logger.Debugf("publish %s", topic)
 	for i, ch := range topic {
 		v, ok := node.children.Load(ch)
 		if !ok {

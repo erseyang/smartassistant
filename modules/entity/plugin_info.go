@@ -3,6 +3,7 @@ package entity
 import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm/clause"
+	"time"
 )
 
 const (
@@ -35,6 +36,7 @@ type PluginInfo struct {
 	Source    string
 	Brand     string
 	ErrorInfo string
+	UpdateAt  time.Time
 }
 
 func (p PluginInfo) TableName() string {

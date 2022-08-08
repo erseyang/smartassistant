@@ -2,10 +2,9 @@ package cloud
 
 import (
 	"fmt"
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"net/http"
 	"strconv"
-
-	setting2 "github.com/zhiting-tech/smartassistant/modules/api/setting"
 
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/cloud"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
@@ -70,7 +69,11 @@ func bindCloud(c *gin.Context) {
 
 	// 判断是否允许找回找回凭证
 	if setting.UserCredentialFound {
-		token, err := setting2.GetAreaAuthToken(u.AreaID)
+		client, err := entity.GetSCClient(u.AreaID)
+		if err != nil {
+			return
+		}
+		token, err := oauth.GetClientToken(client)
 		if err != nil {
 			return
 		}

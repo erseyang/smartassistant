@@ -8,13 +8,17 @@ import (
 	"reflect"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/runtime/protoiface"
+	"google.golang.org/protobuf/runtime/protoimpl"
 )
 
 var (
 	ErrInvalidType = fmt.Errorf("invalid type")
 )
 
-type DefaultBinaryCoder struct{}
+type DefaultBinaryCoder struct {
+	EnableProtobuf bool
+}
 
 func (b *DefaultBinaryCoder) Marshal(v interface{}) ([]byte, error) {
 	return json.Marshal(v)
@@ -48,10 +52,15 @@ func (b *DefaultBinaryCoder) Encode(v reflect.Value) (data []byte, err error) {
 		}
 
 		value := v.Interface()
-		var message proto.Message
+		var messageV2 proto.Message
+		var messageV1 protoiface.MessageV1
 		var ok bool
-		if message, ok = value.(proto.Message); ok {
-			if data, err = proto.Marshal(message); err != nil {
+		if messageV2, ok = value.(proto.Message); b.EnableProtobuf && ok {
+			if data, err = proto.Marshal(messageV2); err != nil {
+				return
+			}
+		} else if messageV1, ok = value.(protoiface.MessageV1); b.EnableProtobuf && ok {
+			if data, err = proto.Marshal(protoimpl.X.ProtoMessageV2Of(messageV1)); err != nil {
 				return
 			}
 		} else {
@@ -102,10 +111,15 @@ func (b *DefaultBinaryCoder) Decode(data []byte, t reflect.Type) (v reflect.Valu
 
 	switch t.Kind() {
 	case reflect.Struct:
-		var message proto.Message
+		var messageV2 proto.Message
+		var messageV1 protoiface.MessageV1
 		var ok bool
-		if message, ok = nv.Interface().(proto.Message); ok {
-			if err = proto.Unmarshal(data, message); err != nil {
+		if messageV2, ok = nv.Interface().(proto.Message); b.EnableProtobuf && ok {
+			if err = proto.Unmarshal(data, messageV2); err != nil {
+				return
+			}
+		} else if messageV1, ok = nv.Interface().(protoiface.MessageV1); b.EnableProtobuf && ok {
+			if err = proto.Unmarshal(data, protoimpl.X.ProtoMessageV2Of(messageV1)); err != nil {
 				return
 			}
 		} else {

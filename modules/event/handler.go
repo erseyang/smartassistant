@@ -2,9 +2,11 @@ package event
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
 
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 
 	"github.com/zhiting-tech/smartassistant/modules/device"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
@@ -34,49 +36,37 @@ func UpdateThingModel(em event.EventMessage) (err error) {
 	iid := em.Param["iid"].(string)
 
 	// 网关未添加则设备不更新
-	isGatewayExist, err := entity.IsDeviceExist(areaID, pluginID, iid)
-	if err != nil {
-		return
-	}
-	if !isGatewayExist {
-		return
-	}
-	// 更新设备物模型
 	var primaryDevice entity.Device
-	primaryDevice, err = plugin.ThingModelToEntity(iid, tm, pluginID, areaID)
-	if err != nil {
+	if primaryDevice, err = entity.GetPluginDevice(areaID, pluginID, iid); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
 		return err
 	}
-	if err = entity.UpdateThingModel(&primaryDevice); err != nil {
+	// 更新设备物模型
+	if err = primaryDevice.UpdateThingModel(tm); err != nil {
 		return
 	}
 
 	// 更新子设备物模型
-	for _, ins := range tm.Instances {
-		if ins.IsBridge() {
-			continue
-		}
+	for _, ins := range tm.GetSubInstances() {
+
 		var e entity.Device
-
-		e, err = plugin.InstanceToEntity(ins, pluginID, iid, areaID)
-		if err != nil {
-			logrus.Error(err)
-			err = nil
-			continue
+		if e, err = entity.GetPluginDevice(areaID, pluginID, ins.IID); err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
 		}
-		configDeviceName := e.Name
-
-		// 更新前判断子设备是否已存在
-		isChildExist, _ := entity.IsDeviceExist(areaID, pluginID, e.IID)
-		if err = entity.UpdateThingModel(&e); err != nil {
-			logrus.Error(err)
-			err = nil
-			continue
-		}
-
 		// 子设备不存在则为所有角色增加改设备的权限 && 更新子设备房间为网关默认房间
-		if !isChildExist {
-			if err = device.AddDevicePermissionForRoles(e, entity.GetDB()); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			e, err = plugin.InstanceToEntity(ins, pluginID, iid, areaID)
+			if err != nil {
+				logrus.Error(err)
+				err = nil
+				continue
+			}
+
+			if err = device.Create(areaID, &e); err != nil {
 				logrus.Error(err)
 				err = nil
 				continue
@@ -84,14 +74,23 @@ func UpdateThingModel(em event.EventMessage) (err error) {
 
 			// 更新设备房间为默认房间
 			updates := map[string]interface{}{
-				"name":           configDeviceName,
-				"location_id":    primaryDevice.LocationID,
-				"location_order": 0,
+				"location_id":      primaryDevice.LocationID,
+				"location_order":   0,
+				"department_id":    primaryDevice.DepartmentID,
+				"department_order": 0,
 			}
 			if err = entity.UpdateDeviceWithMap(e.ID, updates); err != nil {
 				logrus.Error(err)
 				err = nil
 				continue
+			}
+		} else {
+			childThingModel := thingmodel.ThingModel{
+				Instances:  []thingmodel.Instance{ins},
+				OTASupport: false, // TODO 根据插件实现判断
+			}
+			if err = e.UpdateThingModel(childThingModel); err != nil {
+				return
 			}
 		}
 
@@ -101,6 +100,21 @@ func UpdateThingModel(em event.EventMessage) (err error) {
 			"device": e,
 		}
 		event.Notify(m)
+
+	}
+
+	// 如果有子设备添加到了房间或部门，则重新更新对应房间/部门的设备排序
+	if len(tm.GetSubInstances()) != 0 {
+		if primaryDevice.LocationID != 0 {
+			if err = entity.ReorderAllLocationDevices(primaryDevice.LocationID); err != nil {
+				return
+			}
+		}
+		if primaryDevice.DepartmentID != 0 {
+			if err = entity.ReorderAllDepartmentDevices(primaryDevice.DepartmentID); err != nil {
+				return
+			}
+		}
 
 	}
 	return nil

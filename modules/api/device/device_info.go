@@ -192,7 +192,7 @@ func BuildInfoDevice(d entity.Device, user *session.User, req *http.Request, inf
 		}
 		iDevice.Plugin.URL = pluginURL.String()
 		iDevice.Plugin.Control = pluginURL.PluginPath()
-		iDevice.Attributes, err = getDeviceAttributes(userID, d, infoType)
+		iDevice.Attributes, err = getDeviceAttributes(user, d, infoType)
 		if err != nil {
 			return
 		}
@@ -206,12 +206,12 @@ func BuildInfoDevice(d entity.Device, user *session.User, req *http.Request, inf
 }
 
 // getDeviceAttributes 获取设备属性
-func getDeviceAttributes(userID int, d entity.Device, infoType infoType) (as []entity.Attribute, err error) {
+func getDeviceAttributes(sessionUser *session.User, d entity.Device, infoType infoType) (as []entity.Attribute, err error) {
 
 	switch infoType {
 	case WriteAttributes:
-		var up entity.UserPermissions
-		up, err = entity.GetUserPermissions(userID)
+		var up entity.Permissions
+		up, err = sessionUser.GetPermissions()
 		if err != nil {
 			return
 		}

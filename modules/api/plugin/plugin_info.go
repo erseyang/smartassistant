@@ -24,6 +24,7 @@ type PluginInfo struct {
 	IsAdded     bool   `json:"is_added"`
 	IsNewest    bool   `json:"is_newest"`
 	DownloadURL string `json:"download_url"` // 前端插件压缩包？
+	UpdateAt    int64  `json:"update_at"`
 }
 
 // PluginInfoReq 插件详情接口请求参数
@@ -69,12 +70,15 @@ func GetPluginInfo(c *gin.Context) {
 		}
 	}
 	resp.Plugin = PluginInfo{
-		ID:      plg.ID,
-		Info:    plg.Info,
-		Name:    plg.Name,
-		Version: plg.Version,
-		Brand:   plg.Brand,
-		IsAdded: plg.IsAdded(), IsNewest: plg.IsNewest()}
+		ID:       plg.ID,
+		Info:     plg.Info,
+		Name:     plg.Name,
+		Version:  plg.Version,
+		Brand:    plg.Brand,
+		IsAdded:  plg.IsAdded(),
+		IsNewest: plg.IsNewest(),
+		UpdateAt: plg.UpdateAt,
+	}
 	resp.Plugin.DownloadURL = plugin.ArchiveURL(plg.ID, c.Request)
 }
 

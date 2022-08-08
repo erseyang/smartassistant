@@ -51,7 +51,7 @@ func ExecuteScene(c *gin.Context) {
 
 func (req ExecuteSceneReq) executeScene(c *gin.Context, sceneId int) (err error) {
 
-	controlPermission, err := CheckControlPermission(c, sceneId, session.Get(c).UserID)
+	controlPermission, err := CheckUserControlPermission(c, sceneId, session.Get(c).UserID)
 	if !controlPermission {
 		err = errors.New(status.DeviceOrSceneControlDeny)
 		return

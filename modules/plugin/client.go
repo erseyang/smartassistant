@@ -8,6 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zhiting-tech/smartassistant/modules/types/status"
+	errors2 "github.com/zhiting-tech/smartassistant/pkg/errors"
+
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 
@@ -82,7 +85,13 @@ func (c *client) Connect(ctx context.Context, identify Identify, authParams map[
 	if err != nil {
 		return
 	}
-	d.WaitOnline(ctx)
+	if err = d.WaitOnline(ctx); err != nil {
+		return thingmodel.ThingModel{}, errors2.New(status.DeviceConnectTimeout)
+	}
+	for _, ins := range das.Instances {
+		dd := pc.Device(ins.IID)
+		dd.HealthCheck()
+	}
 	return
 }
 
@@ -99,7 +108,6 @@ func (c *client) SetAttributes(ctx context.Context, pluginID string, areaID uint
 	req := proto.SetAttributesReq{
 		Data: data,
 	}
-	logger.Debug("set attributes: ", string(data))
 	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 	cli, err := c.get(pluginID)
@@ -108,7 +116,6 @@ func (c *client) SetAttributes(ctx context.Context, pluginID string, areaID uint
 	}
 	_, err = cli.protoClient.SetAttributes(ctx, &req)
 	if err != nil {
-		logger.Error(err)
 		return
 	}
 	return
@@ -120,12 +127,14 @@ func (c *client) IsOnline(identify Identify) bool {
 		logger.Warningf("plugin %s not found", identify.PluginID)
 		return false
 	}
-	return cli.Device(identify.IID).IsOnline()
+	d := cli.Device(identify.IID)
+	d.HealthCheck()
+	return d.IsOnline()
 }
 
 func (c *client) OTA(ctx context.Context, identify Identify, firmwareURL string) (err error) {
 
-	logger.Debugf("ota: %s, firmware url: %s", identify.IID, firmwareURL)
+	logger.Infof("ota: %s, firmware url: %s", identify.IID, firmwareURL)
 	cli, err := c.get(identify.PluginID)
 	if err != nil {
 		return
@@ -141,14 +150,18 @@ func (c *client) get(domain string) (*pluginClient, error) {
 	if ok {
 		return cli, nil
 	}
-	return nil, NotExistErr
+	return nil, errors2.New(status.PluginDomainNotExist)
 }
 
 func (c *client) Add(cli *pluginClient) {
 
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	oldCli, ok := c.clients[cli.pluginID]
+	if ok {
+		go oldCli.Stop()
+	}
 	c.clients[cli.pluginID] = cli
-	c.mu.Unlock()
 	go cli.InitDevices()
 	go c.ListenStateChange(cli.pluginID)
 }

@@ -38,6 +38,9 @@ const (
 	AreaTypeNotEqual
 	OldPasswordErr
 	PasswordChanged
+
+	MaintenanceNotRun
+	MaintenanceConnected
 )
 
 func init() {
@@ -47,7 +50,7 @@ func init() {
 	errors.NewCode(UserNotExist, "用户不存在")
 	errors.NewCode(AccountNameExist, "当前用户名已存在,请重新输入")
 	errors.NewCode(AccountNameInputNilErr, "请输入用户名")
-	errors.NewCode(AccountNameFormatErr, "英文小写字母、数字和组合且长度1到20位")
+	errors.NewCode(AccountNameFormatErr, "用户名仅限小写字母、数字和组合")
 
 	errors.NewCode(NickNameInputNilErr, "请输入昵称")
 	errors.NewCode(NicknameLengthUpperLimit, "昵称长度不能大于20位")
@@ -75,4 +78,7 @@ func init() {
 	errors.NewCode(ErrRefreshTokenExpired, "refresh token is expired")
 	errors.NewCode(GetCloudDiskTokenDeny, "不允许获取网盘凭证")
 	errors.NewCode(PasswordChanged, "密码已修改，请重新登录")
+
+	errors.NewCode(MaintenanceNotRun, "维护模式未启动")
+	errors.NewCode(MaintenanceConnected, "维护模式已被连接")
 }

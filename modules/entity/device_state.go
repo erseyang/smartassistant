@@ -57,3 +57,9 @@ func GetPluginDeviceStates(pluginID, iid string) (states []DeviceState, err erro
 	err = GetDB().Where(DeviceState{PluginID: pluginID, IID: iid}).Find(&states).Error
 	return
 }
+
+func DeleteStatesByDeviceId(deviceID int) (err error){
+	states := DeviceState{}
+	err = GetDB().Where("device_id=?", deviceID).Delete(&states).Error
+	return
+}

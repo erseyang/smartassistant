@@ -32,6 +32,7 @@ const (
 )
 
 type Service struct {
+	Name       string      `json:"name"` // 为空时根据type做国际化处理，允许插件设置默认值
 	Type       ServiceType `json:"type"`
 	Attributes []Attribute `json:"attributes"`
 }

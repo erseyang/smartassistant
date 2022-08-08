@@ -59,3 +59,11 @@ message NewConnectionEvent {
     bytes Key = 2;
     string RemoteAddr = 3;
 }
+
+// TempConnectionCertRequest 临时连接凭据
+message TempConnectionCertRequest {
+    // SAID
+    string saId = 1;         
+    // 二维码过期时间
+    double expire_time = 2;  
+}

@@ -53,7 +53,7 @@ func (s *Server) AcceptWebSocket(c *gin.Context) {
 		conn:   conn,
 		bucket: s.bucket,
 		send:   make(chan []byte, 4),
-		ginCtx: c,
+		ginCtx: c.Copy(),
 	}
 
 	s.bucket.register <- cli
@@ -91,6 +91,7 @@ func (s *Server) MulticastMsg(em event.EventMessage) error {
 		iid := em.Param["iid"]
 		topic = fmt.Sprintf("%d/%s/%s/%s", areaID, em.EventType, pluginID, iid)
 	case event.DeviceDecrease:
+		ev.Data = em.Param
 	case event.DeviceIncrease:
 		ev.Data = em.Param
 		v, ok := em.Param["device"]
@@ -119,8 +120,6 @@ func (s *Server) MulticastMsg(em event.EventMessage) error {
 		}
 		topic = fmt.Sprintf("%d/%s/%s/%s", areaID, em.EventType, d.PluginID, d.IID)
 	}
-
-	logger.Debugf("multicast topic: %s msg %v", topic, em)
 
 	s.bucket.Publish(topic, ev)
 	return nil

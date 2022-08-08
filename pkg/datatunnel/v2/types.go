@@ -3,9 +3,10 @@ package datatunnel
 import "github.com/zhiting-tech/smartassistant/pkg/datatunnel/v2/control"
 
 const (
-	methodAuthenticate    = "Authenticate"
-	methodRegisterService = "RegisterService"
-	notifyNewConnection   = "NewConnection"
+	methodAuthenticate      = "Authenticate"
+	methodRegisterService   = "RegisterService"
+	notifyNewConnection     = "NewConnection"
+	methodAllowTempConnCert = "AllowTempConnCert"
 )
 
 const (

@@ -23,8 +23,8 @@ import (
 type UpdateDeviceReq struct {
 	Name            *string `json:"name"`
 	LogoType        *int    `json:"logo_type"`
-	LocationID      int     `json:"location_id"`
-	DepartmentID    int     `json:"department_id"`
+	LocationID      *int    `json:"location_id"`
+	DepartmentID    *int    `json:"department_id"`
 	Common          *bool   `json:"common"`
 	CascadeLocation bool    `json:"cascade_location"`
 
@@ -32,19 +32,22 @@ type UpdateDeviceReq struct {
 }
 
 func (req *UpdateDeviceReq) Validate() (updateDevice entity.Device, err error) {
-	if req.LocationID != 0 {
-		if _, err = entity.GetLocationByID(req.LocationID); err != nil {
-			return
+	if req.LocationID != nil {
+		if *req.LocationID != 0 {
+			if _, err = entity.GetLocationByID(*req.LocationID); err != nil {
+				return
+			}
 		}
+		updateDevice.LocationID = *req.LocationID
 	}
-	updateDevice.LocationID = req.LocationID
-	if req.DepartmentID != 0 {
-		if _, err = entity.GetDepartmentByID(req.DepartmentID); err != nil {
-			return
+	if req.DepartmentID != nil {
+		if *req.DepartmentID != 0 {
+			if _, err = entity.GetDepartmentByID(*req.DepartmentID); err != nil {
+				return
+			}
 		}
+		updateDevice.DepartmentID = *req.DepartmentID
 	}
-	updateDevice.DepartmentID = req.DepartmentID
-
 	if req.Name != nil {
 		if err = checkDeviceName(*req.Name); err != nil {
 			return
@@ -122,14 +125,14 @@ func UpdateDevice(c *gin.Context) {
 		return
 	}
 
-	if req.LocationID == 0 && entity.IsHome(curArea.AreaType) {
+	if req.LocationID != nil && *req.LocationID == 0 && entity.IsHome(curArea.AreaType) {
 		// 未勾选房间, 设备与房间解绑
 		if err = entity.UnBindLocationDevice(id); err != nil {
 			return
 		}
 	}
 
-	if req.DepartmentID == 0 && entity.IsCompany(curArea.AreaType) {
+	if req.DepartmentID != nil && *req.DepartmentID == 0 && entity.IsCompany(curArea.AreaType) {
 		// 未勾选房间, 设备与部门解绑
 		if err = entity.UnBindDepartmentDevice(id); err != nil {
 			return
@@ -143,9 +146,16 @@ func UpdateDevice(c *gin.Context) {
 		return
 	}
 
-	if req.CascadeLocation == true && req.LocationID != 0 {
-		if err = entity.UpdateSubDevicesLocation(curDevice.IID, updateDevice.LocationID); err != nil {
-			return
+	if req.CascadeLocation == true {
+		if req.LocationID != nil && *req.LocationID != 0 && entity.IsHome(curArea.AreaType) {
+			if err = entity.UpdateSubDevicesLocation(curDevice.IID, updateDevice.LocationID); err != nil {
+				return
+			}
+		}
+		if req.DepartmentID != nil && *req.DepartmentID != 0 && entity.IsCompany(curArea.AreaType) {
+			if err = entity.UpdateSubDevicesDepartment(curDevice.IID, updateDevice.DepartmentID); err != nil {
+				return
+			}
 		}
 	}
 
@@ -159,6 +169,18 @@ func UpdateDevice(c *gin.Context) {
 			if err = entity.RemoveUserCommonDevice(u.UserID, u.AreaID, id); err != nil {
 				return
 			}
+		}
+	}
+
+	// 更新了房间或部门，则重新更新对应房间/部门的设备排序
+	if req.LocationID != nil && *req.LocationID != 0 {
+		if err = entity.ReorderAllLocationDevices(*req.LocationID); err != nil {
+			return
+		}
+	}
+	if req.DepartmentID != nil && *req.DepartmentID != 0 {
+		if err = entity.ReorderAllDepartmentDevices(*req.DepartmentID); err != nil {
+			return
 		}
 	}
 

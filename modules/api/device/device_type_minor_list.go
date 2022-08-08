@@ -1,8 +1,6 @@
 package device
 
 import (
-	"sort"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
@@ -31,48 +29,59 @@ type MinorReq struct {
 type minorType struct {
 	Name       string
 	ParentType plugin.DeviceType
+	CurType    plugin.DeviceType
 }
 
-var minorTypes = map[plugin.DeviceType]minorType{
-	plugin.TypeLamp:             {"台灯", plugin.TypeLight},
-	plugin.TypeCeilingLamp:      {"吸顶灯", plugin.TypeLight},
-	plugin.TypeBulb:             {"灯泡", plugin.TypeLight},
-	plugin.TypeLightStrip:       {"灯带", plugin.TypeLight},
-	plugin.TypePendantLight:     {"吊灯", plugin.TypeLight},
-	plugin.TypeBedSideLamp:      {"夜灯", plugin.TypeLight},
-	plugin.TypeNightLight:       {"床头灯", plugin.TypeLight},
-	plugin.TypeFanLamp:          {"风扇灯", plugin.TypeLight},
-	plugin.TypeDownLight:        {"简射灯", plugin.TypeLight},
-	plugin.TypeMagneticRailLamp: {"磁吸轨道灯", plugin.TypeLight},
+var minorTypes = []minorType{
+	{"台灯", plugin.TypeLight, plugin.TypeLamp},
+	{"吸顶灯", plugin.TypeLight, plugin.TypeCeilingLamp},
+	{"灯泡", plugin.TypeLight, plugin.TypeBulb},
+	{"灯带", plugin.TypeLight, plugin.TypeLightStrip},
+	{"吊灯", plugin.TypeLight, plugin.TypePendantLight},
+	{"床头灯", plugin.TypeLight, plugin.TypeNightLight},
+	{"夜灯", plugin.TypeLight, plugin.TypeBedSideLamp},
+	{"风扇灯", plugin.TypeLight, plugin.TypeFanLamp},
+	{"筒射灯", plugin.TypeLight, plugin.TypeDownLight},
+	{"磁吸轨道灯", plugin.TypeLight, plugin.TypeMagneticRailLamp},
 
-	plugin.TypeOneKeySwitch:   {"单键开关", plugin.TypeSwitch},
-	plugin.TypeTwoKeySwitch:   {"双键开关", plugin.TypeSwitch},
-	plugin.TypeThreeKeySwitch: {"三键开关", plugin.TypeSwitch},
-	plugin.TypeWirelessSwitch: {"无线开关", plugin.TypeSwitch},
-	plugin.TypeController:     {"控制器", plugin.TypeSwitch},
+	{"排插", plugin.TypeOutlet, plugin.TypePowerStrip},
+	{"转换器", plugin.TypeOutlet, plugin.TypeConverter},
+	{"入墙插座", plugin.TypeOutlet, plugin.TypeWallPlug},
 
-	plugin.TypeConverter:  {"转换器", plugin.TypeOutlet},
-	plugin.TypeWallPlug:   {"入墙插座", plugin.TypeOutlet},
-	plugin.TypePowerStrip: {"排座", plugin.TypeOutlet},
+	{"单键开关", plugin.TypeSwitch, plugin.TypeOneKeySwitch},
+	{"双键开关", plugin.TypeSwitch, plugin.TypeTwoKeySwitch},
+	{"三键开关", plugin.TypeSwitch, plugin.TypeThreeKeySwitch},
+	{"四键开关", plugin.TypeSwitch, plugin.TypeFourKeySwitch},
+	{"无线开关", plugin.TypeSwitch, plugin.TypeWirelessSwitch},
+	{"控制器", plugin.TypeSwitch, plugin.TypeController},
 
-	plugin.TypeRouter:       {"路由器", plugin.TypeRoutingGateway},
-	plugin.TypeWifiRepeater: {"Wi-Fi信号放大器", plugin.TypeRoutingGateway},
-	plugin.TypeGateway:      {"网关", plugin.TypeRoutingGateway},
+	{"温湿度传感器", plugin.TypeSensor, plugin.TypeTemperatureAndHumiditySensor},
+	{"人体传感器", plugin.TypeSensor, plugin.TypeHumanSensors},
+	{"烟雾传感器", plugin.TypeSensor, plugin.TypeSmokeSensor},
+	{"燃气传感器", plugin.TypeSensor, plugin.TypeGasSensor},
+	{"门窗传感器", plugin.TypeSensor, plugin.TypeWindowDoorSensor},
+	{"水浸传感器", plugin.TypeSensor, plugin.TypeWaterLeakSensor},
+	{"光照度传感器", plugin.TypeSensor, plugin.TypeIlluminanceSensor},
+	{"动静传感器", plugin.TypeSensor, plugin.TypeDynamicAndStaticSensor},
 
-	plugin.TypeCamera:           {"摄像头", plugin.TypeSecurity},
-	plugin.TypePeepholeDoorbell: {"猫眼门铃", plugin.TypeSecurity},
-	plugin.TypeDoorLock:         {"门锁", plugin.TypeSecurity},
+	{"路由器", plugin.TypeRoutingGateway, plugin.TypeRouter},
+	{"网关", plugin.TypeRoutingGateway, plugin.TypeGateway},
+	{"Wi-Fi信号放大器", plugin.TypeRoutingGateway, plugin.TypeWifiRepeater},
 
-	plugin.TypeCurtain: {"窗帘电机", plugin.TypeLifeElectric},
+	{"摄像头", plugin.TypeSecurity, plugin.TypeCamera},
+	{"猫眼门铃", plugin.TypeSecurity, plugin.TypePeepholeDoorbell},
+	{"门锁", plugin.TypeSecurity, plugin.TypeDoorLock},
 
-	plugin.TypeTemperatureAndHumiditySensor: {"温湿度传感器", plugin.TypeSensor},
-	plugin.TypeHumanSensors:                 {"人体传感器", plugin.TypeSensor},
-	plugin.TypeSmokeSensor:                  {"烟雾传感器", plugin.TypeSensor},
-	plugin.TypeGasSensor:                    {"燃气传感器", plugin.TypeSensor},
-	plugin.TypeWindowDoorSensor:             {"门窗传感器", plugin.TypeSensor},
-	plugin.TypeWaterLeakSensor:              {"水浸传感器", plugin.TypeSensor},
-	plugin.TypeIlluminanceSensor:            {"光照度传感器", plugin.TypeSensor},
-	plugin.TypeDynamicAndStaticSensor:       {"动静传感器", plugin.TypeSensor},
+	{"窗帘电机", plugin.TypeLifeElectric, plugin.TypeCurtain},
+}
+
+func getCurrentType(currentType plugin.DeviceType) (t minorType, ok bool) {
+	for _, m := range minorTypes {
+		if m.CurType == currentType {
+			return m, true
+		}
+	}
+	return minorType{}, false
 }
 
 // MinorTypeList 根据主分类获取次级分类和设备类型
@@ -92,7 +101,7 @@ func MinorTypeList(c *gin.Context) {
 		err = errors.Wrap(err, errors.BadRequest)
 		return
 	}
-	if _, ok := majorTypes[req.Type]; !ok {
+	if _, ok := getParentType(req.Type); !ok {
 		err = errors.Wrap(err, status.DeviceTypeNotExist)
 		return
 	}
@@ -126,37 +135,22 @@ func MinorTypeList(c *gin.Context) {
 				PluginID:     pluginConf.ID,
 				Protocol:     d.Protocol,
 			}
-			if req.Type == minorTypes[d.Type].ParentType || req.Type == d.Type {
+			pType, ok := getCurrentType(d.Type)
+			if !ok{
+				continue
+			}
+			if req.Type == pType.ParentType || req.Type == d.Type {
 				m[d.Type] = append(m[d.Type], md)
 			}
 		}
 	}
-
-	for k, v := range m {
-		name := minorTypes[k].Name
-		if name == "" {
-			name = "其他"
+	for _, mt := range minorTypes {
+		if val, ok := m[mt.CurType]; ok {
+			name := mt.Name
+			if mt.Name == "" {
+				name = "其他"
+			}
+			resp.Types = append(resp.Types, MinorType{Type{name, mt.CurType}, val})
 		}
-		resp.Types = append(resp.Types, MinorType{Type{name, k}, v})
 	}
-
-	sort.Sort(resp.Types) // 按拼音首字母A-Z排序
-}
-
-func (t MinorTypes) Len() int {
-	return len(t)
-}
-
-func (t MinorTypes) Swap(i, j int) {
-	t[i], t[j] = t[j], t[i]
-}
-
-func (t MinorTypes) Less(i, j int) bool {
-	iPinyin := getInitialPinyin(t[i].Name)
-	iAscii := getInitialAscii(iPinyin)
-
-	jPinyin := getInitialPinyin(t[j].Name)
-	jAsciiI := getInitialAscii(jPinyin)
-
-	return iAscii < jAsciiI
 }

@@ -1,9 +1,11 @@
 package user
 
 import (
-	"github.com/zhiting-tech/smartassistant/modules/config"
 	"strconv"
 	"time"
+
+	"github.com/zhiting-tech/smartassistant/modules/cloud"
+	"github.com/zhiting-tech/smartassistant/modules/config"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
@@ -11,6 +13,7 @@ import (
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
 	jwt2 "github.com/zhiting-tech/smartassistant/modules/utils/jwt"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
+
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
 )
 
@@ -19,8 +22,8 @@ const expireAt = time.Minute * 10
 
 // getInvitationCodeReq 获取邀请二维码接口请求参数
 type getInvitationCodeReq struct {
-	RoleIds []int `json:"role_ids"`
-	UserId  int   `json:"-"`
+	RoleIds       []int `json:"role_ids"`
+	UserId        int   `json:"-"`
 	DepartmentIds []int `json:"department_ids"`
 }
 
@@ -103,14 +106,18 @@ func (req getInvitationCodeReq) getInvitationCode(c *gin.Context) (resp getInvit
 	}
 	// 设置jwt token
 	claims := jwt2.AccessClaims{
-		UID:     req.UserId,
-		AreaID:  u.AreaID,
-		RoleIds: req.RoleIds,
-		SAID:    config.GetConf().SmartAssistant.ID,
-		Exp:     time.Now().Add(expireAt).Unix(),
-		AreaType: curArea.AreaType,
+		UID:           req.UserId,
+		AreaID:        u.AreaID,
+		RoleIds:       req.RoleIds,
+		SAID:          config.GetConf().SmartAssistant.ID,
+		Exp:           time.Now().Add(expireAt).Unix(),
+		AreaType:      curArea.AreaType,
 		DepartmentIds: req.DepartmentIds,
+		IsCloudSA:     config.IsCloudSA(),
 	}
+
+	// 发送said到SC作为用户访问凭证
+	go cloud.AllowTempConnCert(expireAt)
 
 	resp.QRCode, err = jwt2.GenerateUserJwt(claims, u.Key, u.UserID)
 	if err != nil {

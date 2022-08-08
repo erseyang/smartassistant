@@ -8,6 +8,7 @@ import (
 type DeviceInfo struct {
 	IID          string
 	Model        string
+	Name         string
 	Manufacturer string
 	Type         string
 	AuthRequired bool
@@ -25,13 +26,16 @@ type Device interface {
 	// Disconnect 断开与设备的连接
 	Disconnect(iid string) error
 
+	// Close 资源回收, sa重连设备时用来回收老设备资源
+	Close() error
+
 	// Define 使用 *definer.Definer 来生成物模型
-	Define(definer2 *definer.Definer)
+	Define(definer2 *definer.Definer) error
 
 	// Info 设备信息，通常在局域网发现阶段可以获取
 	Info() DeviceInfo
 
-	// Online 设备或子设备是否在线
+	// Online 设备或子设备是否在线，改方法会被频繁请求，最好是非阻塞的实现
 	Online(iid string) bool
 }
 

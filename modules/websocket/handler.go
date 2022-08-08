@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	errors2 "errors"
 	"sort"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -40,6 +41,7 @@ type ParentDevice struct {
 	DeviceID  int    `json:"device_id"`
 	Name      string `json:"name"`
 	PluginUrl string `json:"plugin_url"`
+	Control   string `json:"control"`
 }
 
 func GetInstances(req Request) (result interface{}, err error) {
@@ -53,7 +55,7 @@ func GetInstances(req Request) (result interface{}, err error) {
 	if err != nil {
 		return
 	}
-	up, err := entity.GetUserPermissions(req.User.UserID)
+	up, err := req.User.GetPermissions()
 	if err != nil {
 		return
 	}
@@ -75,10 +77,20 @@ func GetInstances(req Request) (result interface{}, err error) {
 			return
 		}
 		var pluginToken string
-		pluginToken, err = oauth.GetUserPluginToken(user.UserID, req.ginCtx.Request, user.AreaID)
-		if err != nil {
-			return
+		if req.User.IsClient() {
+			var cli entity.Client
+			cli, err = entity.GetSCClient(req.User.AreaID)
+			pluginToken, err = oauth.GetClientToken(cli)
+			if err != nil {
+				return
+			}
+		} else {
+			pluginToken, err = oauth.GetUserPluginToken(user.UserID, req.ginCtx.Request, user.AreaID)
+			if err != nil {
+				return
+			}
 		}
+
 		var pluginUrl *plugin.URL
 		pluginUrl, err = plugin.ControlURLWithToken(pDevice, req.ginCtx.Request, pluginToken)
 		if err != nil {
@@ -89,6 +101,7 @@ func GetInstances(req Request) (result interface{}, err error) {
 			DeviceID:  pDevice.ID,
 			Name:      pDevice.Name,
 			PluginUrl: pluginUrl.String(),
+			Control:   pluginUrl.PluginPath(),
 		}
 	}
 	result = resp
@@ -99,7 +112,7 @@ func SetAttrs(req Request) (result interface{}, err error) {
 	var sr sdk.SetRequest
 	json.Unmarshal(req.Data, &sr)
 	user := req.User
-	up, err := entity.GetUserPermissions(user.UserID)
+	up, err := user.GetPermissions()
 	if err != nil {
 		return
 	}
@@ -107,22 +120,22 @@ func SetAttrs(req Request) (result interface{}, err error) {
 	for _, attr := range sr.Attributes {
 		var d entity.Device
 		d, err = entity.GetPluginDevice(req.User.AreaID, req.Domain, attr.IID)
+		if err != nil {
+			if err != gorm.ErrRecordNotFound {
+				return
+			}
+			err = nil
+			return
+		}
 		tm, _ := d.GetThingModel()
 		_, err = tm.GetAttribute(attr.IID, attr.AID)
 		if err != nil {
 			err = errors.New(status.AttrNotFound)
 			return
 		}
-		if err == nil {
-			if !up.IsDeviceAttrControlPermit(d.ID, attr.AID) {
-				err = errors.New(status.Deny)
-				return
-			}
-		} else {
-			if err != gorm.ErrRecordNotFound {
-				return
-			}
-			err = nil
+		if !up.IsDeviceAttrControlPermit(d.ID, attr.AID) {
+			err = errors.New(status.Deny)
+			return
 		}
 	}
 	// 发送控制命令
@@ -181,30 +194,36 @@ func ConnectDevice(req Request) (result interface{}, err error) {
 		if isChildIns {
 			e, err = plugin.InstanceToEntity(ins, req.Domain, p.IID, req.User.AreaID)
 			if err != nil {
-				logger.Error(err)
+				logger.Errorf("ConnectDevice InstanceToEntity %s, err:", p.IID, err)
 				err = nil
 				continue
 			}
 		} else {
 			e, err = plugin.ThingModelToEntity(p.IID, tm, req.Domain, req.User.AreaID)
 			if err != nil {
+				logger.Error("ConnectDevice ThingModelToEntity %s, err:", p.IID, err)
 				return
 			}
 		}
 
 		if err = device.Create(req.User.AreaID, &e); err != nil {
-			logger.Error(err)
+			logger.Error("ConnectDevice create %s, err:", p.IID, err)
 			err = nil
 			continue
 		}
 
 		// 记录添加设备信息
 		go analytics.RecordStruct(analytics.EventTypeDeviceAdd, req.User.UserID, e)
+
+		up, _ := req.User.GetPermissions()
+		i, _ := e.GetThingModelWithState(up)
 		// 通知SC
 		em := event.NewEventMessage(event.DeviceIncrease, req.User.AreaID)
 		em.Param = map[string]interface{}{
-			"device": e,
+			"device":           e,
+			"device_instances": i,
 		}
+
 		event.Notify(em)
 		if isChildIns {
 			continue
@@ -235,6 +254,9 @@ func ConnectDevice(req Request) (result interface{}, err error) {
 
 // DisconnectDevice 设备断开连接（取消配对等）
 func DisconnectDevice(req Request) (result interface{}, err error) {
+	var (
+		instanceDevice entity.Device
+	)
 	if !entity.JudgePermit(req.User.UserID, types.DeviceDelete) {
 		err = errors.New(status.Deny)
 		return
@@ -248,7 +270,9 @@ func DisconnectDevice(req Request) (result interface{}, err error) {
 		IID:      p.IID,
 		AreaID:   req.User.AreaID,
 	}
-	err = plugin.DisconnectDevice(context.Background(), identify, p.AuthParams)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	err = plugin.DisconnectDevice(ctx, identify, p.AuthParams)
 	if err != nil {
 		logger.Errorf("disconnect device err: %s", err)
 	}
@@ -260,25 +284,41 @@ func DisconnectDevice(req Request) (result interface{}, err error) {
 	if err != nil {
 		return
 	}
-	if err = entity.DelDeviceByID(d.ID); err != nil {
-		return
-	}
 
-	if err = entity.RemoveCommonDevice(d.ID); err != nil {
-		return
-	}
+	var devices []entity.Device
+	em := event.NewEventMessage(event.DeviceDecrease, req.User.AreaID)
 
-	// 如果是网关，遍历子设备并删除
+	// 如果是网关，遍历设备并删除
 	for _, ins := range tm.Instances {
-		if err = entity.DelDeviceByIID(req.User.AreaID, req.Domain, ins.IID); err != nil {
+		instanceDevice, err = entity.GetPluginDevice(req.User.AreaID, req.Domain, ins.IID)
+		if err != nil{
+			logger.Errorf("get device by iid %s err %s", ins.IID, err)
+			err = nil
+			continue
+		}
+		if err = entity.DelDeviceByID(instanceDevice.ID); err != nil {
 			logger.Errorf("del device by iid %s err %s", ins.IID, err)
 			err = nil
 			continue
 		}
+		// 删除子设备连带删除相关设备状态日志
+		if err = entity.DeleteStatesByDeviceId(instanceDevice.ID); err != nil{
+			logger.Errorf("del device state log err device_id: %s err %s", instanceDevice.ID, err)
+			err = nil
+			continue
+		}
+
+
+		devices = append(devices, entity.Device{
+			PluginID: d.PluginID,
+			IID:      d.IID,
+		})
 	}
 
 	// 通知SC
-	event.Notify(event.NewEventMessage(event.DeviceDecrease, req.User.AreaID))
+
+	em.Param["deleted_devices"] = devices
+	event.Notify(em)
 	// 记录删除设备信息
 	go analytics.RecordStruct(analytics.EventTypeDeviceDelete, req.User.UserID, d)
 
@@ -334,7 +374,9 @@ func CheckUpdate(req Request) (result interface{}, err error) {
 func OTA(req Request) (result interface{}, err error) {
 
 	var p DeviceHandleParams
-	json.Unmarshal(req.Data, &p)
+	if err = json.Unmarshal(req.Data, &p); err != nil {
+		return
+	}
 	user := req.User
 
 	d, err := entity.GetPluginDevice(user.AreaID, req.Domain, p.IID)
@@ -521,7 +563,7 @@ func SubDevices(req Request) (result interface{}, err error) {
 	if err != nil {
 		return
 	}
-	up, err := entity.GetUserPermissions(req.User.UserID)
+	up, err := req.User.GetPermissions()
 	if err != nil {
 		return
 	}
@@ -530,7 +572,7 @@ func SubDevices(req Request) (result interface{}, err error) {
 		return
 	}
 
-	logger.Debugf("found %d instance from %s", len(tm.Instances), deviceLogReq.IID)
+	// logger.Debugf("found %d instance from %s", len(tm.Instances), deviceLogReq.IID)
 	// 遍历物模型，获取子设备IID,从数据库中获取子设备列表
 	var resp SubDevicesResp
 	resp.SubDevices = make([]SubDevice, 0)
@@ -611,6 +653,28 @@ func SubDevices(req Request) (result interface{}, err error) {
 	return resp, nil
 }
 
+type updateDeviceServiceReq struct {
+	IID string `json:"iid"`
+
+	ServiceIndex int    `json:"service_index"`
+	ServiceName  string `json:"service_name"`
+}
+
+func UpdateDeviceService(req Request) (result interface{}, err error) {
+
+	var updateReq updateDeviceServiceReq
+	json.Unmarshal(req.Data, &updateReq)
+	d, err := entity.GetPluginDevice(req.User.AreaID, req.Domain, updateReq.IID)
+	if err != nil {
+		return
+	}
+	if err = d.UpdateServiceName(updateReq.ServiceIndex, updateReq.ServiceName); err != nil {
+		return
+	}
+
+	return
+}
+
 func RegisterCmd() {
 	RegisterCallFunc(ServiceOTA, OTA)                     // OTA
 	RegisterCallFunc(ServiceConnect, ConnectDevice)       // 添加/连接设备
@@ -619,7 +683,8 @@ func RegisterCmd() {
 	RegisterCallFunc(ServiceGetInstances, GetInstances)   // 获取物模型
 	RegisterCallFunc(ServiceDisconnect, DisconnectDevice) // 删除设备/断开连接
 
-	RegisterCallFunc(ServiceSubDevices, SubDevices)     // 子设备列表
-	RegisterCallFunc(ServiceListGateways, ListGateways) // 列出网关列表
-	RegisterCallFunc(ServiceDeviceStates, DeviceStates) // 设备状态（日志）
+	RegisterCallFunc(ServiceSubDevices, SubDevices)                   // 子设备列表
+	RegisterCallFunc(ServiceListGateways, ListGateways)               // 列出网关列表
+	RegisterCallFunc(ServiceDeviceStates, DeviceStates)               // 设备状态（日志）
+	RegisterCallFunc(ServiceUpdateDeviceService, UpdateDeviceService) // 更新设备服务
 }

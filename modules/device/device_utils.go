@@ -19,7 +19,7 @@ func IsPermit(c *gin.Context, p types.Permission) bool {
 
 // ControlPermissions 根据配置获取设备所有控制权限
 func ControlPermissions(d entity.Device, withHidden bool) ([]types.Permission, error) {
-	as, err := d.ControlAttributes(withHidden)
+	srvs, err := d.ControlServices()
 	if err != nil {
 		logger.Error("GetControlAttributesErr", err)
 		return nil, err
@@ -27,15 +27,28 @@ func ControlPermissions(d entity.Device, withHidden bool) ([]types.Permission, e
 
 	target := types.DeviceTarget(d.ID)
 	res := make([]types.Permission, 0)
-	for _, attr := range as {
-		name := attr.Attribute.Type
-		p := types.Permission{
-			Name:      name,
-			Action:    types.ActionControl,
-			Target:    target,
-			Attribute: strconv.Itoa(attr.AID),
+	for _, srv := range srvs {
+
+		for _, attr := range srv.Attributes {
+			if !attr.PermissionWrite() {
+				continue
+			}
+			if !withHidden && attr.PermissionHidden() {
+				continue
+			}
+			name := attr.Type
+			p := types.Permission{
+				ServiceName: string(srv.Type),
+				Name:        name,
+				Action:      types.ActionControl,
+				Target:      target,
+				Attribute:   strconv.Itoa(attr.AID),
+			}
+			if srv.Name != "" { // 自定义服务名不为空则使用自定义服务名
+				p.ServiceName = srv.Name
+			}
+			res = append(res, p)
 		}
-		res = append(res, p)
 	}
 	tm, _ := d.GetThingModel()
 	if tm.OTASupport {

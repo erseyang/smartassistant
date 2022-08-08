@@ -66,6 +66,10 @@ func (d Device) IsSa() bool {
 func (d *Device) AfterDelete(tx *gorm.DB) (err error) {
 	// 删除设备所有相关权限
 	target := types.DeviceTarget(d.ID)
+
+	if err = tx.Where("device_id=?", d.ID).Delete(&UserCommonDevice{}).Error; err != nil {
+		return
+	}
 	return tx.Delete(&RolePermission{}, "target = ?", target).Error
 }
 
@@ -150,14 +154,16 @@ func GetDevicesByDepartmentID(departmentId int) (devices []Device, err error) {
 }
 
 func DelDeviceByIID(areaID uint64, pluginID string, iid string) (err error) {
-	cond := Device{AreaID: areaID, PluginID: pluginID, IID: iid}
-	err = GetDB().Delete(&Device{}, cond).Error
-	return
+	d, err := GetPluginDevice(areaID, pluginID, iid)
+	if err != nil {
+		return
+	}
+	return DelDeviceByID(d.ID)
 }
 
 func DelDeviceByID(id int) (err error) {
 	d := Device{ID: id}
-	err = GetDB().Delete(&d).Error
+	err = GetDB().Model(&d).Delete(&d).Error
 	return
 }
 
@@ -185,6 +191,11 @@ func UpdateDevice(id int, updateDevice Device) (err error) {
 
 func UpdateSubDevicesLocation(iid string, locationId int) (err error) {
 	err = GetDB().Model(&Device{}).Where("parent_iid = ?", iid).Updates(Device{LocationID: locationId}).Error
+	return
+}
+
+func UpdateSubDevicesDepartment(iid string, departmentID int) (err error) {
+	err = GetDB().Model(&Device{}).Where("parent_iid = ?", iid).Updates(Device{DepartmentID: departmentID}).Error
 	return
 }
 
@@ -245,7 +256,7 @@ func UnBindDepartmentDevice(deviceID int) (err error) {
 
 func UnBindLocationDevice(deviceID int) (err error) {
 	device := &Device{ID: deviceID}
-	err = GetDB().First(device).Update("location_id", 0).Error
+	err = GetDB().First(device).Updates(map[string]interface{}{"location_id": 0, "location_order": 0}).Error
 	return
 }
 
@@ -277,6 +288,20 @@ func ReorderDevices(areaID uint64, deviceIDs []int) (err error) {
 		Columns:   []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"area_order"}),
 	}).Create(&devices).Error
+}
+
+// ReorderAllLocationDevices 重新排序房间所有设备
+func ReorderAllLocationDevices(locationID int) (err error) {
+
+	devices, err := GetOrderLocationDevices(locationID)
+	if err != nil {
+		return
+	}
+	var deviceIDs []int
+	for _, d := range devices {
+		deviceIDs = append(deviceIDs, d.ID)
+	}
+	return ReorderLocationDevices(locationID, deviceIDs)
 }
 
 // ReorderLocationDevices 重新排序房间设备
@@ -311,6 +336,20 @@ func ReorderLocationDevices(locationID int, deviceIDs []int) (err error) {
 		Columns:   []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"location_id", "location_order"}),
 	}).Create(&devices).Error
+}
+
+// ReorderAllDepartmentDevices 重新排序部门所有设备
+func ReorderAllDepartmentDevices(departmentID int) (err error) {
+
+	devices, err := GetOrderDepartmentDevices(departmentID)
+	if err != nil {
+		return
+	}
+	var deviceIDs []int
+	for _, d := range devices {
+		deviceIDs = append(deviceIDs, d.ID)
+	}
+	return ReorderDepartmentDevices(departmentID, deviceIDs)
 }
 
 // ReorderDepartmentDevices 重新排序部门设备
@@ -419,32 +458,77 @@ func CreateDevice(d *Device, tx *gorm.DB) (err error) {
 	return
 }
 
-func UpdateThingModel(d *Device) (err error) {
-	if err = GetDB().Unscoped().Clauses(clause.OnConflict{
-		Columns: []clause.Column{
-			{Name: "iid"},
-			{Name: "plugin_id"},
-			{Name: "area_id"},
-		},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"thing_model",
-			"shadow",
-			"deleted",
-			"parent_iid",
-		}),
-	}).Create(d).Error; err != nil {
-		return errors.Wrap(err, errors.InternalServerErr)
+func (d *Device) UpdateThingModel(new thingmodel.ThingModel) (err error) {
+	tm, err := d.GetThingModel()
+	if err != nil {
+		return
 	}
-	filter := Device{
-		AreaID:   d.AreaID,
-		PluginID: d.PluginID,
-		IID:      d.IID,
+	if err = tm.Update(new); err != nil {
+		return
 	}
-	d.ID = 0
-	if err = GetDB().First(d, filter).Error; err != nil {
-		return errors.Wrap(err, errors.InternalServerErr)
+	d.ThingModel, err = json.Marshal(tm)
+	if err != nil {
+		return
 	}
+	shadow := NewShadow()
+	for _, instance := range tm.Instances {
+		for _, srv := range instance.Services {
+			for _, attr := range srv.Attributes {
+				shadow.UpdateReported(instance.IID, attr.AID, attr.Val)
+			}
+		}
+	}
+	d.Shadow, err = json.Marshal(shadow)
+	if err != nil {
+		return
+	}
+	updates := map[string]interface{}{
+		"thing_model": d.ThingModel,
+		"shadow":      d.Shadow,
+	}
+
+	info, err := new.GetInfo(d.IID)
+	if err != nil {
+		return err
+	}
+
+	infoChange := d.Model != info.Model || d.Manufacturer != info.Manufacturer || d.Type != info.Type
+	if infoChange {
+		updates["model"] = info.Model
+		updates["manufacturer"] = info.Manufacturer
+		updates["type"] = info.Type
+	}
+
+	if err = GetDB().Model(&d).Updates(updates).Error; err != nil {
+		return err
+	}
+
+	if infoChange {
+		d.Model = info.Model
+		d.Manufacturer = info.Manufacturer
+		d.Type = info.Type
+	}
+
 	return
+}
+
+func (d Device) UpdateServiceName(index int, name string) (err error) {
+	tm, err := d.GetThingModel()
+	if err != nil {
+		return
+	}
+	if err = tm.UpdateServiceName(d.IID, index, name); err != nil {
+		return
+	}
+	d.ThingModel, err = json.Marshal(tm)
+	if err != nil {
+		return
+	}
+	updates := map[string]interface{}{
+		"thing_model": d.ThingModel,
+	}
+
+	return GetDB().Model(&d).Updates(updates).Error
 }
 
 // CreateSA 添加SA设备
@@ -478,12 +562,14 @@ func CreateSA(device *Device, tx *gorm.DB) (err error) {
 
 // UserAttributes 获取设备所有有权限的属性
 func (d Device) UserAttributes() (attributes []Attribute, err error) {
-
 	tm, err := d.GetThingModel()
 	if err != nil {
 		return
 	}
-
+	shadow, err := d.GetShadow()
+	if err != nil {
+		return
+	}
 	if len(tm.Instances) == 0 {
 		return
 	}
@@ -497,10 +583,20 @@ func (d Device) UserAttributes() (attributes []Attribute, err error) {
 			continue
 		}
 		for _, attr := range srv.Attributes {
-			if attr.NoPermission() || attr.PermissionHidden() {
+			if attr.NoPermission() {
 				continue
 			}
-			attributes = append(attributes, Attribute{srv.Type, attr})
+			var val interface{}
+			val, err = shadow.Get(ins.IID, attr.AID)
+			if err != nil {
+				return
+			}
+			attr.Val = val
+			a := Attribute{string(srv.Type), srv.Type, attr}
+			if srv.Name != "" {
+				a.ServiceName = srv.Name
+			}
+			attributes = append(attributes, a)
 		}
 	}
 
@@ -523,14 +619,20 @@ func (d Device) TriggerableAttributes() (attributes []Attribute, err error) {
 }
 
 // ControllableAttributes 获取设备所有可以控制的属性
-func (d Device) ControllableAttributes(up UserPermissions) (attributes []Attribute, err error) {
+func (d Device) ControllableAttributes(up Permissions) (attributes []Attribute, err error) {
 
 	attrs, err := d.UserAttributes()
 	if err != nil {
 		return
 	}
 	for _, attr := range attrs {
-		if attr.PermissionWrite() && up.IsDeviceAttrControlPermit(d.ID, attr.AID) && !attr.PermissionSceneHidden() {
+		if attr.PermissionSceneHidden() {
+			continue
+		}
+		if !attr.PermissionHidden() && !up.IsDeviceAttrControlPermit(d.ID, attr.AID) {
+			continue
+		}
+		if attr.PermissionWrite() {
 			attributes = append(attributes, attr)
 		}
 	}
@@ -548,7 +650,7 @@ func (d Device) IsTriggerable() bool {
 }
 
 // IsControllable 判断设备可以作为执行任务被选择
-func (d Device) IsControllable(up UserPermissions) bool {
+func (d Device) IsControllable(up Permissions) bool {
 	attributes, err := d.ControllableAttributes(up)
 	if err != nil {
 		return false
@@ -556,8 +658,8 @@ func (d Device) IsControllable(up UserPermissions) bool {
 	return len(attributes) != 0
 }
 
-// ControlAttributes 获取设备的属性（有写的权限）
-func (d Device) ControlAttributes(withHidden bool) (attributes []Attribute, err error) {
+// ControlServices 获取设备的服务
+func (d Device) ControlServices() (services []thingmodel.Service, err error) {
 	tm, err := d.GetThingModel()
 	if err != nil {
 		return
@@ -576,15 +678,7 @@ func (d Device) ControlAttributes(withHidden bool) (attributes []Attribute, err 
 		if srv.Type == "info" {
 			continue
 		}
-		for _, attr := range srv.Attributes {
-			if !attr.PermissionWrite() {
-				continue
-			}
-			if !withHidden && attr.PermissionHidden() {
-				continue
-			}
-			attributes = append(attributes, Attribute{srv.Type, attr})
-		}
+		services = append(services, srv)
 	}
 	return
 }
@@ -613,7 +707,7 @@ func (d Device) GetThingModel() (tm thingmodel.ThingModel, err error) {
 }
 
 // GetThingModelWithState 获取并包装物模型：更新值，更新权限
-func (d Device) GetThingModelWithState(up UserPermissions) (tm thingmodel.ThingModel, err error) {
+func (d Device) GetThingModelWithState(up Permissions) (tm thingmodel.ThingModel, err error) {
 
 	tm, err = d.GetThingModel()
 	if err != nil {

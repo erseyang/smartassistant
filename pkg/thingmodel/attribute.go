@@ -1,7 +1,10 @@
 package thingmodel
 
 import (
-	"encoding/json"
+	"fmt"
+
+	jsoniter "github.com/json-iterator/go"
+
 	"github.com/zhiting-tech/smartassistant/pkg/logger"
 )
 
@@ -146,7 +149,7 @@ const (
 	SubTypeZb  = "zb"  // zigbee
 )
 
-// SubType 子设备类型
+// SubType 子设备类型 (SubTypeBle, SubTypeZb)
 var SubType = Attribute{
 	Type:    "sub_type",
 	ValType: String,
@@ -166,7 +169,7 @@ var Volume = Attribute{
 	),
 }
 
-// OnOff 开关
+// OnOff 开关 on/off/toggle toggle的属性值表示切换开关状态
 var OnOff = Attribute{
 	Type:    "on_off",
 	ValType: String,
@@ -201,7 +204,7 @@ var ColorTemperature = Attribute{
 	),
 }
 
-// RGB RGB
+// RGB RGB值，形如“#2e2e2e”
 var RGB = Attribute{
 	Type:    "rgb",
 	ValType: String,
@@ -383,7 +386,7 @@ var MotionDetected = Attribute{
 	),
 }
 
-// Battery 电池
+// Battery 电量
 var Battery = Attribute{
 	Type:    "battery",
 	ValType: Float32,
@@ -556,6 +559,7 @@ var PermitJoin = Attribute{
 		AttributePermissionWrite,
 		AttributePermissionNotify,
 		AttributePermissionHidden,
+		AttributePermissionSceneHidden,
 	),
 }
 
@@ -645,6 +649,7 @@ var Answer = Attribute{
 		AttributePermissionRead,
 		AttributePermissionNotify,
 		AttributePermissionHidden,
+		AttributePermissionSceneHidden,
 	),
 }
 
@@ -656,6 +661,7 @@ var StreamingStatus = Attribute{
 		AttributePermissionRead,
 		AttributePermissionNotify,
 		AttributePermissionHidden,
+		AttributePermissionSceneHidden,
 	),
 }
 
@@ -698,6 +704,7 @@ var MediaFrameRateLimit = Attribute{
 		AttributePermissionWrite,
 		AttributePermissionNotify,
 		AttributePermissionHidden,
+		AttributePermissionSceneHidden,
 	)}
 
 // MediaBitRateLimit 摄像头码率
@@ -709,6 +716,7 @@ var MediaBitRateLimit = Attribute{
 		AttributePermissionWrite,
 		AttributePermissionNotify,
 		AttributePermissionHidden,
+		AttributePermissionSceneHidden,
 	),
 }
 
@@ -721,6 +729,7 @@ var MediaEncodingInterval = Attribute{
 		AttributePermissionWrite,
 		AttributePermissionNotify,
 		AttributePermissionHidden,
+		AttributePermissionSceneHidden,
 	),
 }
 
@@ -733,6 +742,7 @@ var MediaQuality = Attribute{
 		AttributePermissionWrite,
 		AttributePermissionNotify,
 		AttributePermissionHidden,
+		AttributePermissionSceneHidden,
 	),
 }
 
@@ -745,6 +755,7 @@ var MediaGovLength = Attribute{
 		AttributePermissionWrite,
 		AttributePermissionNotify,
 		AttributePermissionHidden,
+		AttributePermissionSceneHidden,
 	),
 }
 
@@ -770,42 +781,74 @@ var PTZLRCruise = Attribute{
 	),
 }
 
-// Select SelectItems的选择结构
+// Temper 防拆报警
+var Temper = Attribute{
+	Type:    "temper",
+	ValType: Bool,
+	Permission: SetPermissions(
+		AttributePermissionRead,
+		AttributePermissionNotify,
+	),
+}
+
+// Select 选择结构
 type Select struct {
-	ID    *int64      `json:"id,omitempty"`
-	Items []SelectItem `json:"items,omitempty"`
+	MaxSelected int           `json:"max_selected"`
+	Items       []*SelectItem `json:"items,omitempty"`
 }
 
 type SelectItem struct {
-	ID   *int64  `json:"id,omitempty"`
-	Name string `json:"name,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Selected bool   `json:"selected"`
 }
 
-func NewSelectAttr() Select {
-	var defaultID int64 = 0
+func NewSelectAttr(maxSelected int) Select {
 	return Select{
-		ID: &defaultID,
-		Items: make([]SelectItem, 0),
+		MaxSelected: maxSelected,
+		Items:       make([]*SelectItem, 0),
 	}
 }
 
-func (s *Select) SetDefaultID(ID int64) {
-	s.ID = &ID
-}
-
-func (s *Select) GetDefaultID() int64{
-	if s.ID == nil {
-		return 0
+// SetSelectedItems 设置选中的元素, 以覆盖式设置
+func (s *Select) SetSelectedItems(itemsID ...string) error {
+	if len(itemsID) > s.MaxSelected {
+		return fmt.Errorf("setSelectedItems limit %d", s.MaxSelected)
 	}
-	return *s.ID
+	s.ForEachItems(func(index int, item *SelectItem) bool {
+		item.Selected = false
+		return true
+	})
+	for _, id := range itemsID {
+		s.ForEachItems(func(index int, item *SelectItem) bool {
+			if item.ID == id {
+				item.Selected = true
+			}
+			return true
+		})
+	}
+	return nil
 }
 
+// GetSelectedItems 获取被选中的元素
+func (s *Select) GetSelectedItems() (selectedItems []*SelectItem) {
+	s.ForEachItems(func(index int, item *SelectItem) bool {
+		if item.Selected {
+			selectedItems = append(selectedItems, item)
+		}
+		return true
+	})
+	return
+}
+
+// Add 添加元素
 func (s *Select) Add(item SelectItem) {
-	s.Items = append(s.Items, item)
+	s.Items = append(s.Items, &item)
 }
 
+// Remove 删除元素
 func (s *Select) Remove(targetItem SelectItem) {
-	s.ForEachItems(func(index int, item SelectItem) bool {
+	s.ForEachItems(func(index int, item *SelectItem) bool {
 		if targetItem.ID == item.ID {
 			s.Items = append(s.Items[:index], s.Items[index+1:]...)
 			return false
@@ -814,15 +857,17 @@ func (s *Select) Remove(targetItem SelectItem) {
 	})
 }
 
-func (s *Select) Marshal() (string, error){
-	jsonData, err := json.Marshal(s)
+// Marshal 编译选择结构为json
+func (s *Select) Marshal() (string, error) {
+	jsonData, err := jsoniter.Marshal(s)
 	if err != nil {
 		return "", err
 	}
 	return string(jsonData), nil
 }
 
-func (s *Select) ForEachItems(f func(index int, item SelectItem) bool) {
+// ForEachItems 遍历元素
+func (s *Select) ForEachItems(f func(index int, item *SelectItem) bool) {
 	for i, it := range s.Items {
 		if ok := f(i, it); !ok {
 			return
@@ -830,16 +875,18 @@ func (s *Select) ForEachItems(f func(index int, item SelectItem) bool) {
 	}
 }
 
-// SelectItems 可用于sa场景选择设置
+// SelectItems 选择属性, 可用于sa场景选择设置
 var SelectItems = Attribute{
 	Type:    "select_items",
 	ValType: JSON,
 	Permission: SetPermissions(
+		AttributePermissionRead,
 		AttributePermissionWrite,
+		AttributePermissionNotify,
 	),
 }
 
 func SelectUnmarshal(data []byte) (result Select, err error) {
-	err = json.Unmarshal(data, &result)
+	err = jsoniter.Unmarshal(data, &result)
 	return
 }

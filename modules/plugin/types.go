@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/zhiting-tech/smartassistant/modules/config"
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
@@ -51,6 +52,7 @@ const (
 	TypeOneKeySwitch   DeviceType = "one_key_switch"   // 单键开关
 	TypeTwoKeySwitch   DeviceType = "two_key_switch"   // 双键开关
 	TypeThreeKeySwitch DeviceType = "three_key_switch" // 三键开关
+	TypeFourKeySwitch  DeviceType = "four_key_switch"  // 四键开关
 	TypeWirelessSwitch DeviceType = "wireless_switch"  // 无线开关
 	TypeController     DeviceType = "controller"       // 控制器
 
@@ -120,12 +122,13 @@ func (p Config) Validate() error {
 
 // Plugin 插件详情
 type Plugin struct {
-	Config `yaml:",inline"`
-	ID     string `json:"id" yaml:"id"`
-	Brand  string `json:"brand" yaml:"brand"`
-	Image  string `json:"image" yaml:"image"`
-	Source string `json:"source" yaml:"source"` // 插件来源
-	AreaID uint64 `json:"area_id" yaml:"area_id"`
+	Config   `yaml:",inline"`
+	ID       string `json:"id" yaml:"id"`
+	Brand    string `json:"brand" yaml:"brand"`
+	Image    string `json:"image" yaml:"image"`
+	Source   string `json:"source" yaml:"source"` // 插件来源
+	AreaID   uint64 `json:"area_id" yaml:"area_id"`
+	UpdateAt int64  `json:"update_at"`
 }
 
 func NewFromEntity(p entity.PluginInfo) Plugin {
@@ -155,7 +158,6 @@ func (p Plugin) IsNewest() bool {
 	if p.Source == entity.SourceTypeDevelopment {
 		return true
 	}
-	return false // 使得用户可以通过更新来重启插件
 
 	pluginInfo, err := entity.GetPlugin(p.ID, p.AreaID)
 	if err != nil {
@@ -215,6 +217,7 @@ func (p Plugin) Install() (err error) {
 		Version:  p.Version,
 		Source:   p.Source,
 		Brand:    p.Brand,
+		UpdateAt: time.Unix(p.UpdateAt, 0),
 	}
 	if err = entity.SavePluginInfo(pi); err != nil {
 		logger.Errorf("UpdatePluginStatus err: %s", err.Error())
@@ -374,7 +377,6 @@ func RunPlugin(plg Plugin) (containerID string, err error) {
 		return
 	}
 	target := "/app/data/"
-	logger.Debugf("mount %s to %s", source, target)
 
 	// 需要使用宿主机能识别的路径来挂载，TODO 当前实现可能导致混乱
 	hostSource := filepath.Join(config.GetConf().SmartAssistant.HostRuntimePath,

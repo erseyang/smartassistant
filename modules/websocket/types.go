@@ -38,6 +38,8 @@ const (
 	ServiceDeviceStates ServiceType = "device_states"
 	// ServiceSubDevices 子设备列表
 	ServiceSubDevices ServiceType = "sub_devices"
+	// ServiceUpdateDeviceService 更新设备service
+	ServiceUpdateDeviceService ServiceType = "update_device_service"
 )
 
 type MsgType string

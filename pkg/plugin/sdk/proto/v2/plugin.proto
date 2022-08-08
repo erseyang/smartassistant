@@ -59,6 +59,7 @@ message device {
   bool authRequired = 4;
   bytes authParams = 5;
   string type = 6;
+  string name = 7;
 }
 
 message event {

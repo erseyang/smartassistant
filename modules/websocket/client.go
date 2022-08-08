@@ -39,13 +39,13 @@ type client struct {
 func (cli *client) SubscribeTopic(topic string, id int64) {
 
 	fn := func(msg interface{}) error {
-		logger.Debugf("func topic: %s", topic)
+		// logger.Debugf("func topic: %s", topic)
 		m := msg.(*Message)
 		m.ID = id
 		cli.SendMsg(m)
 		return nil
 	}
-	logger.Debugf("append subscriber")
+	//logger.Debugf("append subscriber")
 
 	cli.Lock()
 	defer cli.Unlock()
@@ -142,7 +142,7 @@ func (cli *client) handleSubscribeEvent(req Request) (err error) {
 	if req.Event == "" {
 		return errors.New(status2.WebsocketEventRequired)
 	}
-	logger.Debugf("handler subscribe event:%s", req.Event)
+	//logger.Debugf("handler subscribe event:%s", req.Event)
 
 	// 解析请求消息
 	var data subscribeEventReq

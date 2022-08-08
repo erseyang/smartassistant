@@ -3,6 +3,9 @@ package thingmodel
 import (
 	"errors"
 	"fmt"
+	"sync"
+
+	"github.com/sirupsen/logrus"
 )
 
 type ThingModel struct {
@@ -95,6 +98,19 @@ func (das ThingModel) PrimaryInstance() (Instance, error) {
 	return das.BridgeInstance()
 }
 
+func (das ThingModel) GetSubInstances() (subInstance []Instance) {
+	if len(das.Instances) == 1 {
+		return
+	}
+	for _, i := range das.Instances {
+		if i.IsBridge() {
+			continue
+		}
+		subInstance = append(subInstance, i)
+	}
+	return
+}
+
 type DeviceInfo struct {
 	IID          string
 	Name         string
@@ -107,6 +123,8 @@ type DeviceInfo struct {
 type Instance struct {
 	IID      string    `json:"iid"`
 	Services []Service `json:"services"`
+
+	sync.Mutex
 }
 
 func (i Instance) GetInfo() (info DeviceInfo, err error) {
@@ -157,4 +175,74 @@ func (i Instance) GetAttribute(aid int) (Attribute, error) {
 		}
 	}
 	return Attribute{}, fmt.Errorf("attribute %d not found", aid)
+}
+
+func (i *Instance) UpdateServiceName(index int, name string) error {
+	if index >= len(i.Services) {
+		return fmt.Errorf("%s services[%d] not found", i.IID, index)
+	}
+	i.Services[index].Name = name
+	return nil
+}
+
+func (tm *ThingModel) Update(update ThingModel) (err error) {
+	for _, updateInstance := range update.Instances {
+		var found bool
+		for i, _ := range tm.Instances {
+			if tm.Instances[i].IID == updateInstance.IID {
+				found = true
+				if err = tm.Instances[i].Update(updateInstance); err != nil {
+					return
+				}
+			}
+		}
+		if !found {
+			tm.Instances = append(tm.Instances, updateInstance)
+		}
+	}
+	tm.OTASupport = update.OTASupport
+	tm.AuthRequired = update.AuthRequired
+	tm.AuthParams = update.AuthParams
+	tm.IsAuth = update.IsAuth
+	return nil
+}
+
+func (tm *ThingModel) UpdateServiceName(iid string, index int, name string) error {
+	for _, ins := range tm.Instances {
+		if ins.IID == iid {
+		}
+		return ins.UpdateServiceName(index, name)
+	}
+	return nil
+}
+
+// Update service只处理增加的情况
+func (old *Instance) Update(update Instance) (err error) {
+
+	// 防止并发更新services
+	old.Lock()
+	defer old.Unlock()
+	length := len(old.Services)
+	for j, updateService := range update.Services {
+		if j < length {
+			if err = old.Services[j].Update(updateService); err != nil {
+				return
+			}
+		} else {
+			old.Services = append(old.Services, updateService)
+		}
+	}
+	return
+}
+
+// Update 仅更新所有属性，不会更新默认名字和类型
+func (old *Service) Update(update Service) (err error) {
+	if old.Type != update.Type {
+		// 忽略非同类型的service的更新
+		logrus.Warnf("service type mismatch: %s!=%s", old.Type, update.Type)
+		return nil
+	}
+
+	copy(old.Attributes, update.Attributes)
+	return nil
 }

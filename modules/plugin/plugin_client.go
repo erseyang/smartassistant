@@ -93,7 +93,6 @@ func (pc *pluginClient) Device(iid string) *device {
 			return d
 		}
 	}
-	newDevice.HealthCheck()
 	return newDevice
 }
 
@@ -102,7 +101,11 @@ func (pc *pluginClient) RemoveDevice(ctx context.Context, iid string, authParams
 	if v, loaded := pc.devices.LoadAndDelete(iid); loaded {
 		if d, ok := v.(*device); ok {
 			return d.Disconnect(ctx, authParams)
+		} else {
+			logrus.Warningf("remove device %s, d: %+#v", iid, d)
 		}
+	} else {
+		logrus.Warningf("remove device %s, try to disconnect but not found", iid)
 	}
 	return nil
 }
@@ -147,7 +150,7 @@ func (pc *pluginClient) DeviceDiscover(ctx context.Context, out chan<- DiscoverR
 				Model:        resp.Model,
 				Manufacturer: resp.Manufacturer,
 				Type:         resp.Type,
-				Name:         pc.GetDeviceName(resp.Model),
+				Name:         pc.GetDeviceName(resp.Model, resp.Name),
 				PluginID:     pc.pluginID,
 				PluginName:   pc.PluginInfo.Name,
 				AuthRequired: resp.AuthRequired,
@@ -180,17 +183,20 @@ func (pc *pluginClient) InitDevices() {
 	}
 
 	for _, d := range devices {
-		go pc.Device(d.IID) // 通过触发healthCheck来建立连接
+		go pc.Device(d.IID).HealthCheck() // 通过触发healthCheck来建立连接
 	}
 }
 
-func (pc *pluginClient) GetDeviceName(model string) string {
+func (pc *pluginClient) GetDeviceName(model, name string) string {
 	for _, d := range pc.PluginConf.SupportDevices {
 		if d.Model == model {
 			if d.Name != "" {
 				return d.Name
 			}
 		}
+	}
+	if name != "" {
+		return name
 	}
 	return model
 }

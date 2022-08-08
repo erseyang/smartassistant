@@ -60,14 +60,15 @@ type ProxyControlStreamContext struct {
 	msgID        int64
 	waitResponse sync.Map // msgID -> channel
 	ctx          context.Context
-	close        chan struct{}
+	cancel       context.CancelFunc
 }
 
-func NewProxyControlStreamContextWithContext(sender ProxyControlStreamSender, ctx context.Context) *ProxyControlStreamContext {
+func NewProxyControlStreamContextWithContext(ctx context.Context, sender ProxyControlStreamSender) *ProxyControlStreamContext {
+	c, cancel := context.WithCancel(ctx)
 	return &ProxyControlStreamContext{
 		sender: sender,
-		ctx:    ctx,
-		close:  make(chan struct{}),
+		ctx:    c,
+		cancel: cancel,
 	}
 }
 
@@ -92,7 +93,7 @@ func (c *ProxyControlStreamContext) Close() {
 		closeSender.CloseSend()
 	}
 
-	close(c.close)
+	c.cancel()
 }
 
 // UntilResponse 永久等待消息响应
@@ -118,15 +119,11 @@ func (c *ProxyControlStreamContext) WaitResponseWithTime(msgID int64, waitTime t
 			err = ErrTimeout
 		case <-c.ctx.Done():
 			err = ErrConnectionFinish
-		case <-c.close:
-			err = ErrConnectionFinish
 		}
 	} else {
 		select {
 		case msg = <-ch:
 		case <-c.ctx.Done():
-			err = ErrConnectionFinish
-		case <-c.close:
 			err = ErrConnectionFinish
 		}
 	}

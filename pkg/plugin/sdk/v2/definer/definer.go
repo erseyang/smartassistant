@@ -14,7 +14,7 @@ var NotEnableErr = errors.New("attribute not enable")
 var NotFoundErr = errors.New("attribute not found")
 
 type NotifyFunc func(event AttributeEvent) error
-type ThingModelNotifyFunc func(iid string, event ThingModelEvent) error
+type ThingModelNotifyFunc func(iid string) error
 
 type SetRequest struct {
 	IID   string
@@ -90,13 +90,7 @@ func (t *Definer) DelInstance(iid string) {
 }
 
 func (t *Definer) UpdateThingModel() error {
-	tm := t.ThingModel()
-
-	tme := ThingModelEvent{
-		ThingModel: tm,
-		IID:        t.iid,
-	}
-	return t.thingModelNotifyFunc(t.iid, tme)
+	return t.thingModelNotifyFunc(t.iid)
 }
 
 func (t *Definer) FromJSON(data []byte) {
@@ -195,7 +189,7 @@ func (t *Definer) ThingModel() (tm thingmodel.ThingModel) {
 	for _, i := range t.instanceMap { // TODO 丢失顺序，尝试优化
 		ins := thingmodel.Instance{IID: i.IID}
 		for _, s := range i.Services {
-			srv := thingmodel.Service{Type: s.Type()}
+			srv := thingmodel.Service{Type: s.Type(), Name: s.name}
 			for _, a := range s.attributeMap {
 				srv.Attributes = append(srv.Attributes, *a.meta)
 			}
@@ -285,10 +279,10 @@ func (t *Instance) NewLight() *BaseService {
 func (t *Instance) NewCurtain() *BaseService {
 	return t.NewService(thingmodel.CurtainService).
 		WithAttributes(
-			thingmodel.CurrentPosition,
+			// thingmodel.CurrentPosition,
 			thingmodel.TargetPosition,
-			thingmodel.State,
-			thingmodel.Direction,
+			// thingmodel.State,
+			// thingmodel.Direction,
 		)
 }
 func (t *Instance) NewGateway() *BaseService {
@@ -398,7 +392,7 @@ func (t *Instance) NewMediaNegotiation() *BaseService {
 // NewPTZ 摄像头云台控制功能
 func (t *Instance) NewPTZ() *BaseService {
 	return t.NewService(thingmodel.PTZ).WithAttributes(
-		thingmodel.PTZMove, thingmodel.PTZLRCruise, thingmodel.PTZTDCruise)
+		thingmodel.PTZMove)
 }
 
 // NewMedia 摄像头视频相关配置

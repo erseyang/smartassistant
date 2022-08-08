@@ -2,9 +2,11 @@ package datatunnel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/zhiting-tech/smartassistant/pkg/datatunnel/v2/control"
@@ -16,6 +18,8 @@ import (
 )
 
 const (
+	DefaultCallTimeout = 10 * time.Second
+
 	DefaultGrpcIdleTime       = 10 * time.Second
 	DefaultGrpcPingAckTimeout = 20 * time.Second
 )
@@ -61,10 +65,14 @@ type ProxyControlClient struct {
 	logger      control.Logger
 	servicesMap map[string]*ProxyService
 	proxyAddr   string
+	currentPCSC atomic.Value
 }
 
 func NewProxyControlClient(opts ...ProxyControlClientOptionFn) *ProxyControlClient {
-	b := &control.DefaultBinaryCoder{}
+	// 旧版本SA编译出的protobuf是messageV1版本，此时由于旧版本coder不支持messageV1，因此使用的是json序列化
+	// 新版本SA编译出的protobuf是messageV2版本，因此使用protobuf序列化
+	// 开启后会导致使用protobuf序列化而无法兼容旧版本，因此暂时关闭支持protobuf结构体
+	b := &control.DefaultBinaryCoder{EnableProtobuf: false}
 	client := &ProxyControlClient{
 		logger:      logrus.New(),
 		version:     clientVersion,
@@ -87,6 +95,7 @@ func NewProxyControlClient(opts ...ProxyControlClientOptionFn) *ProxyControlClie
 func (c *ProxyControlClient) init() {
 	c.base.RegisterClientMethod(methodAuthenticate, c.version, proto.ProxyControlStreamMsgType_REQUEST, c.Authenticate)
 	c.base.RegisterClientMethod(methodRegisterService, c.version, proto.ProxyControlStreamMsgType_REQUEST, c.RegisterService)
+	c.base.RegisterClientMethod(methodAllowTempConnCert, c.version, proto.ProxyControlStreamMsgType_REQUEST, c.AllowTempConnCert)
 	c.base.RegisterRPC(notifyNewConnection, c.version, proto.ProxyControlStreamMsgType_NOTIFY, c.NewConnection)
 }
 
@@ -115,7 +124,7 @@ func (c *ProxyControlClient) Run(ctx context.Context, target string) {
 			go func() {
 				var err error
 				if err = c.onConnected(pcsc); err != nil {
-					client.CloseSend()
+					pcsc.Close()
 
 					c.logger.Debugf("OnConnected error %v", err)
 
@@ -128,6 +137,7 @@ func (c *ProxyControlClient) Run(ctx context.Context, target string) {
 					}
 				} else {
 					c.logger.Debugf("OnConnected success")
+					c.currentPCSC.Store(pcsc)
 				}
 
 			}()
@@ -144,6 +154,17 @@ func (c *ProxyControlClient) Run(ctx context.Context, target string) {
 			c.logger.Infof("retry connect to %s", target)
 		}
 	}
+}
+
+func (c *ProxyControlClient) GetCurrentPCSC() (pcsc *control.ProxyControlStreamContext, err error) {
+	value := c.currentPCSC.Load()
+	if value == nil {
+		err = errors.New("proxy control client not connected")
+		return
+	}
+
+	pcsc = value.(*control.ProxyControlStreamContext)
+	return
 }
 
 func (c *ProxyControlClient) DialWithContext(ctx context.Context, target string) (
@@ -170,7 +191,7 @@ func (c *ProxyControlClient) DialWithContext(ctx context.Context, target string)
 		return
 	}
 
-	pcsc = control.NewProxyControlStreamContextWithContext(client, ctx)
+	pcsc = control.NewProxyControlStreamContextWithContext(ctx, client)
 	return
 }
 
@@ -182,6 +203,7 @@ func (c *ProxyControlClient) onConnected(pcsc *control.ProxyControlStreamContext
 	}
 
 	err = c.RegisterAllServices(pcsc)
+
 	return
 }
 

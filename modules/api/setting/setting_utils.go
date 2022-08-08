@@ -11,17 +11,16 @@ import (
 	"encoding/pem"
 	errors2 "errors"
 	"fmt"
-	"github.com/tidwall/gjson"
 	"io/ioutil"
 	"net/http"
 	"time"
 
-	"golang.org/x/crypto/ssh"
-	"gopkg.in/oauth2.v3"
+	"github.com/tidwall/gjson"
 
-	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/cloud"
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 
 	"github.com/zhiting-tech/smartassistant/modules/config"
@@ -33,26 +32,6 @@ const (
 	HttpRequestTimeout = (time.Duration(30) * time.Second)
 	PublicKeyEmail     = "smartassistant@zhitingtech.com"
 )
-
-func GetAreaAuthToken(areaID uint64) (token string, err error) {
-	req, _ := http.NewRequest("", "", nil)
-	scClient, _ := entity.GetSCClient(areaID)
-	tgr := oauth2.TokenGenerateRequest{
-		ClientID:       scClient.ClientID,
-		ClientSecret:   scClient.ClientSecret,
-		Scope:          scClient.AllowScope,
-		Request:        req,
-		AccessTokenExp: 30 * 24 * time.Hour, // 设置为30天有效期
-	}
-
-	ti, err := oauth.GetOauthServer().GetAccessToken(oauth2.ClientCredentials, &tgr)
-	if err != nil {
-		return
-	}
-
-	token = ti.GetAccess()
-	return
-}
 
 // sendAreaAuthToSC 发送认证token给SC
 func sendAreaAuthToSC(areaID uint64) {
@@ -71,7 +50,8 @@ func sendAreaAuthToSC(areaID uint64) {
 	saID := config.GetConf().SmartAssistant.ID
 	scUrl := config.GetConf().SmartCloud.URL()
 	url := fmt.Sprintf("%s/sa/%s/areas/%d", scUrl, saID, areaID)
-	token, err := GetAreaAuthToken(areaID)
+	scClient, _ := entity.GetSCClient(areaID)
+	token, err := oauth.GetClientToken(scClient)
 	if err != nil {
 		logger.Errorf("get access token failed: (%v)\n", err)
 		return
@@ -142,7 +122,8 @@ func SendPrivateKeyToSCWithContext(ctx context.Context, privateKey []byte) (err 
 	}
 	b, _ := json.Marshal(body)
 
-	ctx, _ = context.WithTimeout(ctx, HttpRequestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, HttpRequestTimeout)
+	defer cancel()
 	if req, err = http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(b)); err != nil {
 		return
 	}

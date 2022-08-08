@@ -16,14 +16,15 @@ var (
 )
 
 type AccessClaims struct {
-	UID     int    `json:"uid"`
-	AreaID  uint64 `json:"area_id,omitempty"`
-	RoleIds []int  `json:"role_ids,omitempty"`
-	SAID    string `json:"sa_id,omitempty"`
-	Exp     int64  `json:"exp,omitempty"`
-	Scope   string `json:"scope,omitempty"`
-	AreaType orm2.AreaType `json:"area_type"`
-	DepartmentIds []int `json:"department_ids"`
+	UID           int           `json:"uid"`
+	AreaID        uint64        `json:"area_id,omitempty"`
+	RoleIds       []int         `json:"role_ids,omitempty"`
+	SAID          string        `json:"sa_id,omitempty"`
+	Exp           int64         `json:"exp,omitempty"`
+	Scope         string        `json:"scope,omitempty"`
+	AreaType      orm2.AreaType `json:"area_type"`
+	DepartmentIds []int         `json:"department_ids"`
+	IsCloudSA     bool          `json:"is_cloud_sa"`
 }
 
 func (c AccessClaims) Valid() error {

@@ -1,8 +1,9 @@
 package user
 
 import (
-	"github.com/zhiting-tech/smartassistant/modules/file"
 	"strconv"
+
+	"github.com/zhiting-tech/smartassistant/modules/file"
 
 	"github.com/zhiting-tech/smartassistant/modules/api/area"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
@@ -132,7 +133,7 @@ func CheckQrCode(c *gin.Context) {
 }
 
 func (req *checkQrCodeReq) checkQrCode(c *gin.Context) (resp CheckQrCodeResp, err error) {
-	u := session.GetUserByToken(c)
+	u := session.Get(c)
 
 	var (
 		uRoles       []entity.UserRole

@@ -39,20 +39,26 @@ type Permissions struct {
 
 // DeviceAdvanced 设备高级权限信息
 type DeviceAdvanced struct {
-	Locations []Location `json:"locations"`
-	Departments []Location `json:"departments"`
+	Locations     []Location `json:"locations"`
+	Departments   []Location `json:"departments"`
+	Devices       []*Device  `json:"devices"`        // 权限中默认展示全部设备
+	CommonDevices []*Device  `json:"common_devices"` // 常用设备权限
 }
 
 // Location 房间信息
 type Location struct {
-	Name    string   `json:"name"`
-	Devices []Device `json:"devices"`
+	Name       string   `json:"name"`
+	Devices    []Device `json:"devices"`
+	Sort       int      `json:"sort"`
+	LocationID int      `json:"location_id"`
 }
 
 // Device 设备信息
 type Device struct {
-	Name        string       `json:"name"`
-	Permissions []Permission `json:"permissions"`
+	Name          string       `json:"name"`
+	LocationOrder int          `json:"location_order"` // 设备在房间中的排序
+	LocationID    int          `json:"location_id"`
+	Permissions   []Permission `json:"permissions"`
 }
 
 // Permission 权限信息

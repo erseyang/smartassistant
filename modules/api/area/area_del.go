@@ -1,6 +1,7 @@
 package area
 
 import (
+	"github.com/zhiting-tech/smartassistant/modules/api/homebridge"
 	"strconv"
 
 	"github.com/zhiting-tech/smartassistant/modules/api/extension"
@@ -50,6 +51,10 @@ func DelArea(c *gin.Context) {
 
 	if !entity.IsOwnerOfArea(session.Get(c).UserID, id) {
 		err = errors.New(status.Deny)
+		return
+	}
+
+	if err = homebridge.UnbindHomeBridge(c); err != nil {
 		return
 	}
 

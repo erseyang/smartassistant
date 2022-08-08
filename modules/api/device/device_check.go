@@ -2,6 +2,7 @@ package device
 
 import (
 	errors2 "errors"
+	"github.com/zhiting-tech/smartassistant/modules/maintenance"
 	"os"
 
 	"github.com/zhiting-tech/smartassistant/modules/types"
@@ -21,6 +22,7 @@ type CheckSaDeviceResp struct {
 	Revision   string `json:"revision"`
 	Version    string `json:"version"`
 	MinVersion string `json:"min_version"`
+	Mode       int    `json:"mode"`
 }
 
 // CheckSaDevice 用于处理检查SA设备绑定情况接口的请求
@@ -32,9 +34,11 @@ func CheckSaDevice(c *gin.Context) {
 	defer func() {
 		response.HandleResponse(c, err, &resp)
 	}()
+	saMode := maintenance.GetMaintenanceStatus()
 	resp.Revision = os.Getenv("GIT_COMMIT")
 	resp.Version = types.Version
 	resp.MinVersion = types.MinVersion
+	resp.Mode = saMode
 	if _, err = entity.GetSaDevice(); err != nil {
 		if errors2.Is(err, gorm.ErrRecordNotFound) {
 			err = nil

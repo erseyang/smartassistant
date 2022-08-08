@@ -105,11 +105,11 @@ func taskLogWrapper(target interface{}) WrapperFunc {
 // IsConditionsSatisfied 场景条件是否满足 isTrigByTimer 是否由定时条件触发
 func IsConditionsSatisfied(scene entity.Scene, isTrigByTimer bool) bool {
 	if !scene.IsOn {
-		logger.Debugf("scene %d: is off\n", scene.ID)
+		//logger.Debugf("scene %d: is off\n", scene.ID)
 		return false
 	}
 	if !IsInTimePeriod(scene) { // 不在有效时间段内则不执行
-		logger.Debugf("scene %d: not in effective time period\n", scene.ID)
+		//logger.Debugf("scene %d: not in effective time period\n", scene.ID)
 		return false
 	}
 	// “任一满足”情况下，定时触发的任务直接满足条件
@@ -123,17 +123,17 @@ func IsConditionsSatisfied(scene entity.Scene, isTrigByTimer bool) bool {
 
 		// 任一满足
 		if !scene.IsMatchAllCondition() && IsConditionSatisfied(condition) {
-			logger.Debugf("scene %d: condition:%d satisfied\n", scene.ID, condition.ID)
+			//logger.Debugf("scene %d: condition:%d satisfied\n", scene.ID, condition.ID)
 			return true
 		}
 		// 全部满足（有一个不满足）
 		if scene.IsMatchAllCondition() && !IsConditionSatisfied(condition) {
-			logger.Debugf("scene %d: condition:%d not satisfied\n", scene.ID, condition.ID)
+			//logger.Debugf("scene %d: condition:%d not satisfied\n", scene.ID, condition.ID)
 			return false
 		}
 	}
 
-	logger.Debugf("scene.ID %d, scene.ConditionLogic %d \n", scene.ID, scene.ConditionLogic)
+	//logger.Debugf("scene.ID %d, scene.ConditionLogic %d \n", scene.ID, scene.ConditionLogic)
 	return scene.IsMatchAllCondition()
 }
 
@@ -142,7 +142,7 @@ func IsInTimePeriod(scene entity.Scene) bool {
 
 	weekday := time.Now().Weekday()
 	if !strings.Contains(scene.RepeatDate, strconv.Itoa(int(weekday))) {
-		logger.Debugf("scene %d: today not in repeat date\n", scene.ID)
+		//logger.Debugf("scene %d: today not in repeat date\n", scene.ID)
 		return false
 	}
 
@@ -182,6 +182,6 @@ func IsConditionSatisfied(condition entity.SceneCondition) bool {
 		logger.Error("shadow get attribute error:", err)
 		return false
 	}
-	logger.Debugf("%v %s %v\n", val, condition.Operator, item.Val)
+	//logger.Debugf("%v %s %v\n", val, condition.Operator, item.Val)
 	return item.Operate(condition.Operator, val)
 }

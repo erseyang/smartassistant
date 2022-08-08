@@ -1,8 +1,10 @@
 package entity
 
 import (
-	"gorm.io/gorm"
 	"strconv"
+	"strings"
+
+	"gorm.io/gorm"
 
 	"github.com/zhiting-tech/smartassistant/modules/types"
 )
@@ -41,17 +43,30 @@ type Attr struct {
 	Attribute  string
 }
 
-type UserPermissions struct {
-	ps      []RolePermission
-	isOwner bool
+type Permissions struct {
+	ps       []RolePermission
+	isOwner  bool
+	userID   int
+	clientID string
+	scope    string
 }
 
-func (up UserPermissions) IsOwner() bool {
+func (up Permissions) IsClient() bool {
+	return up.clientID != "" && up.userID == 0
+}
+
+// DeviceScopeAllow 是否允许控制设备
+func (up Permissions) DeviceScopeAllow() bool {
+	return strings.Contains(up.scope, types.ScopeDevice.Scope) ||
+		strings.Contains(up.scope, types.ScopeGetTokenBySC.Scope) // 兼容旧的SC Client
+}
+
+func (up Permissions) IsOwner() bool {
 	return up.isOwner
 }
 
 // IsDeviceControlPermit 判断设备是否可控制
-func (up UserPermissions) IsDeviceControlPermit(deviceID int) bool {
+func (up Permissions) IsDeviceControlPermit(deviceID int) bool {
 	if up.isOwner {
 		return true
 	}
@@ -65,9 +80,12 @@ func (up UserPermissions) IsDeviceControlPermit(deviceID int) bool {
 }
 
 // IsDeviceAttrControlPermit 判断设备的属性是否有权限
-func (up UserPermissions) IsDeviceAttrControlPermit(deviceID int, aid int) bool {
+func (up Permissions) IsDeviceAttrControlPermit(deviceID int, aid int) bool {
 	if up.isOwner {
 		return true
+	}
+	if up.IsClient() {
+		return up.DeviceScopeAllow() // 有设备控制权限的client
 	}
 	for _, p := range up.ps {
 		if p.Action == types.ActionControl &&
@@ -79,7 +97,7 @@ func (up UserPermissions) IsDeviceAttrControlPermit(deviceID int, aid int) bool 
 	return false
 }
 
-func (up UserPermissions) IsPermit(tp types.Permission) bool {
+func (up Permissions) IsPermit(tp types.Permission) bool {
 	if up.isOwner {
 		return true
 	}
@@ -92,7 +110,7 @@ func (up UserPermissions) IsPermit(tp types.Permission) bool {
 }
 
 // GetUserPermissions 获取用户的所有权限
-func GetUserPermissions(userID int) (up UserPermissions, err error) {
+func GetUserPermissions(userID int) (up Permissions, err error) {
 	var ps []RolePermission
 	if err = GetDB().Scopes(UserRolePermissionsScope(userID)).
 		Find(&ps).Error; err != nil {
@@ -102,7 +120,19 @@ func GetUserPermissions(userID int) (up UserPermissions, err error) {
 	if err != nil {
 		return
 	}
-	return UserPermissions{ps: ps, isOwner: IsOwnerOfArea(userID, user.AreaID)}, nil
+	up = Permissions{
+		userID: userID, ps: ps,
+		isOwner: IsOwnerOfArea(userID, user.AreaID)}
+	return
+}
+
+// GetClientPermissions 获取客户的权限
+func GetClientPermissions(clientID, scope string) (up Permissions, err error) {
+	up = Permissions{
+		clientID: clientID,
+		scope:    scope,
+	}
+	return
 }
 
 func UserRolePermissionsScope(userID int) func(db *gorm.DB) *gorm.DB {

@@ -124,14 +124,15 @@ func (s *Server) readFromUDP(token []byte) {
 			continue
 		}
 		if method == "get_prop.info" {
+			info := Info{
+				Model: types.SaModel,
+				SwVer: types.Version,
+				HwVer: types.HardwareVersion,
+				SaID:  config.GetConf().SmartAssistant.ID,
+			}
 			re := Result{
 				ID: int(msg["id"].(float64)),
-				Re: Info{
-					Model: types.SaModel,
-					SwVer: types.Version,
-					HwVer: types.HardwareVersion,
-					SaID:  config.GetConf().SmartAssistant.ID,
-				},
+				Re: info,
 			}
 			re.Re.Port, ok = config.GetConf().Datatunnel.GetPort("http")
 			if !ok {
@@ -149,6 +150,7 @@ func (s *Server) readFromUDP(token []byte) {
 }
 
 func helloResponse() []byte {
+
 	resp := struct {
 		Model string `json:"model"`
 	}{Model: types.SaModel}

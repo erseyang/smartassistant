@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/pkg/logger"
@@ -22,9 +23,7 @@ func LoadPluginFromZip(path string, areaID uint64) (plg Plugin, err error) {
 		return
 	}
 
-	logger.Debug(dstDir)
 	dstDir, _ = filepath.Abs(dstDir)
-	logger.Debug(dstDir)
 	pluginPath := pluginBasePath(dstDir)
 	plgConf, err := LoadPluginConfig(pluginPath)
 	if err != nil {
@@ -42,6 +41,7 @@ func LoadPluginFromZip(path string, areaID uint64) (plg Plugin, err error) {
 		ConfigMsg: data,
 		Version:   plgConf.Version,
 		Source:    entity.SourceTypeDevelopment,
+		UpdateAt:  time.Now(),
 	}
 	if err = entity.SavePluginInfo(pi); err != nil {
 		return

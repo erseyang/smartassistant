@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/zhiting-tech/smartassistant/modules/entity"
+	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/v2/definer"
 )
 
 func addDevice() *entity.Device {
@@ -108,4 +109,27 @@ func TestDeviceAutoScene(t *testing.T) {
 	err = entity.GetDB().Where("name=?", aName).Find(&taskLogs).Error
 	assert.Nil(t, err)
 	assert.NotEmpty(t, len(taskLogs), "auto task log not found")
+}
+
+// 针对设备状态变化引起的并发测试
+func TestDeviceChange(t *testing.T) {
+	device := entity.Device{
+		ID: 3,
+	}
+	acOff := definer.AttributeEvent{
+		IID: "6055f98499e5",
+		AID: 6,
+		Val: "off",
+	}
+	acOn := definer.AttributeEvent{
+		IID: "6055f98499e5",
+		AID: 6,
+		Val: "on",
+	}
+
+	for i := 0; i < 10; i ++{
+		_ = GetManager().DeviceStateChange(device, acOff)
+		time.Sleep(time.Second * sceneDefaultDelaySecond) // 模拟设备响应时间
+		_ = GetManager().DeviceStateChange(device, acOn)
+	}
 }

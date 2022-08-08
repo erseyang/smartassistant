@@ -33,7 +33,6 @@ func GetOauthServer() *server.Server {
 
 func newOauthServer() *server.Server {
 	manager := manage.NewDefaultManager()
-
 	// generate jwt access token
 	manager.MapAccessGenerate(generate.NewJWTAccessGenerate(jwt.SigningMethodHS256))
 	manager.MapAuthorizeGenerate(generate.NewAuthorizeGenerate())
@@ -47,7 +46,7 @@ func newOauthServer() *server.Server {
 	})
 
 	implicitTokenConfig := &manage.Config{
-		AccessTokenExp: 24 * 365 * 10 * time.Hour,
+		AccessTokenExp: 0,
 	}
 	manager.SetImplicitTokenCfg(implicitTokenConfig)
 
@@ -60,7 +59,7 @@ func newOauthServer() *server.Server {
 	manager.SetAuthorizeCodeTokenCfg(config)
 
 	clientTokenConfig := &manage.Config{
-		AccessTokenExp: 24 * time.Hour,
+		AccessTokenExp: 0,
 	}
 	manager.SetClientTokenCfg(clientTokenConfig)
 

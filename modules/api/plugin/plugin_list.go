@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/zhiting-tech/smartassistant/modules/api/utils/strings_utils"
+	"sort"
 
 	"github.com/zhiting-tech/smartassistant/modules/api/brand"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
@@ -70,9 +72,26 @@ func ListPlugin(c *gin.Context) {
 				ID:      plg.PluginID,
 				Info:    plg.Info,
 				IsAdded: true,
+				UpdateAt: plg.UpdateAt.Unix(),
 			},
 			BuildStatus: plg.Status,
 		}
 		resp.Plugins = append(resp.Plugins, p)
 	}
+	sort.Sort(resp)
 }
+
+func (r Resp) Len() int {
+	return len(r.Plugins)
+}
+
+func (r Resp) Swap(i, j int) {
+	r.Plugins[i], r.Plugins[j] = r.Plugins[j], r.Plugins[i]
+}
+
+func (r Resp) Less(i, j int) bool {
+	iAscii := strings_utils.GetInitialAscii(r.Plugins[i].Name)
+	jAscii := strings_utils.GetInitialAscii(r.Plugins[j].Name)
+	return iAscii < jAscii
+}
+

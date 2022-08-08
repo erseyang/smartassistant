@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"github.com/gin-gonic/gin"
-
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/plugin"
@@ -34,7 +33,18 @@ func DelPlugin(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	dList, err := entity.GetDevicesByPluginID(p.PluginID)
+	if err != nil {
+		return
+	}
+
 	plg := plugin.NewFromEntity(p)
-	err = plg.Remove(c.Request.Context())
-	event.Notify(event.NewEventMessage(event.DeviceDecrease, sessionUser.AreaID))
+	if err = plg.Remove(c.Request.Context()); err != nil {
+		return
+	}
+
+	em := event.NewEventMessage(event.DeviceDecrease, sessionUser.AreaID)
+	em.Param["deleted_device"] = dList
+	event.Notify(em)
 }

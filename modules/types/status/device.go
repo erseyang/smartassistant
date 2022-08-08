@@ -18,6 +18,7 @@ const (
 	DeviceLogoNotExist
 	AddDeviceFail
 	AttrNotFound
+	DeviceConnectTimeout
 )
 
 func init() {
@@ -35,4 +36,5 @@ func init() {
 	errors.NewCode(DeviceLogoNotExist, "设备图标不存在")
 	errors.NewCode(AddDeviceFail, "添加设备失败")
 	errors.NewCode(AttrNotFound, "属性不存在")
+	errors.NewCode(DeviceConnectTimeout, "设备连接超时")
 }

@@ -7,22 +7,23 @@ import (
 	"github.com/zhiting-tech/smartassistant/pkg/rand"
 	"gopkg.in/oauth2.v3"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
+	// AreaClient 默认Client
 	AreaClient = iota + 1
+	// SCClient SC
 	SCClient
 )
 
 type Client struct {
 	ID           int
-	AreaID       uint64 `gorm:"UniqueIndex:aid_type"`
+	AreaID       uint64
 	ClientID     string
 	ClientSecret string
 	GrantType    string
 	AllowScope   string // 允许客户端申请的权限
-	Type         int    `gorm:"UniqueIndex:aid_type"`
+	Type         int    // 0普通Client 1初始默认Client 2 SC Client
 }
 
 func (c Client) TableName() string {
@@ -30,17 +31,34 @@ func (c Client) TableName() string {
 }
 
 // CreateClient 创建应用
-func CreateClient(grantType, allowScope string, clientType int) (client Client, err error) {
+func CreateClient(grantType, allowScope string, areaID uint64) (client Client, err error) {
+	client = Client{
+		GrantType:  getAllowGrantType(grantType),
+		AllowScope: allowScope,
+		AreaID:     areaID,
+	}
+
+	if err = GetDB().Create(&client).Error; err != nil {
+		err = errors.Wrap(err, errors.InternalServerErr)
+		return
+	}
+	return
+}
+
+// CreateTypeClient 创建预定义应用
+func CreateTypeClient(grantType, allowScope string, clientType int, areaID uint64) (client Client, err error) {
 	client = Client{
 		GrantType:  getAllowGrantType(grantType),
 		AllowScope: allowScope,
 		Type:       clientType,
+		AreaID:     areaID,
 	}
 
-	if err = GetDB().FirstOrCreate(&client).Error; err != nil {
+	if err = GetDB().Model(&client).Where(client).FirstOrCreate(&client).Error; err != nil {
 		err = errors.Wrap(err, errors.InternalServerErr)
 		return
 	}
+
 	return
 }
 
@@ -74,16 +92,13 @@ func InitClient(areaID uint64) (err error) {
 		GrantType:  string(oauth2.ClientCredentials),
 		Type:       SCClient,
 		AreaID:     areaID,
-		AllowScope: types.WithScopes(types.ScopeGetTokenBySC),
+		AllowScope: types.WithScopes(types.ScopeGetTokenBySC, types.ScopeDevice),
 	}
 
 	clients = append(clients, saClient, scClient)
 
 	for _, client := range clients {
-		if err = GetDB().Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "area_id"}, {Name: "type"}},
-			DoUpdates: clause.AssignmentColumns([]string{"grant_type", "allow_scope"}),
-		}).Create(&client).Error; err != nil {
+		if err = GetDB().Create(&client).Error; err != nil {
 			err = errors.Wrap(err, errors.InternalServerErr)
 			return
 		}

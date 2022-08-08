@@ -21,7 +21,7 @@ type rolePermissionsResp struct {
 	Permissions map[string]bool `json:"permissions"`
 }
 
-func (resp *rolePermissionsResp) wrap(ps []Permission, up entity.UserPermissions) {
+func (resp *rolePermissionsResp) wrap(ps []Permission, up entity.Permissions) {
 	if len(resp.Permissions) == 0 {
 		resp.Permissions = make(map[string]bool)
 	}
@@ -38,7 +38,7 @@ func (resp *rolePermissionsResp) wrap(ps []Permission, up entity.UserPermissions
 }
 
 // checkSAUpgradePermission 校验sa的固件升级，软件升级权限
-func (resp *rolePermissionsResp) checkSAUpgragePermission(up entity.UserPermissions) {
+func (resp *rolePermissionsResp) checkSAUpgragePermission(up entity.Permissions) {
 	saDevice, err := entity.GetSaDevice()
 	if err != nil {
 		return
