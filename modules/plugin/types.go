@@ -164,7 +164,7 @@ func (p Plugin) IsNewest() bool {
 		logger.Errorf("get plugin info fail: %v\n", err)
 		return true
 	}
-	greater, err := version2.Greater(p.Version, pluginInfo.Version)
+	greater, err := version2.GreaterOrEqual(pluginInfo.Version, p.Version)
 	if err != nil {
 		logger.Errorf("compare plugin version fail: %v\n", err)
 		return true

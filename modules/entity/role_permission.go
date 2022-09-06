@@ -172,13 +172,11 @@ func judgePermit(userID int, action, target, attribute string) bool {
 }
 
 func IsPermit(roleID int, action, target, attribute string, tx *gorm.DB) bool {
-	p := RolePermission{
-		RoleID:    roleID,
-		Action:    action,
-		Target:    target,
-		Attribute: attribute,
-	}
-	if err := tx.First(&p, p).Error; err != nil {
+	if err := tx.First(
+		&RolePermission{},
+		"role_id=? and action=? and target=? and attribute=?",
+		roleID, action, target, attribute).Error;
+	err != nil {
 		return false
 	}
 	return true

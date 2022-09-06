@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/zhiting-tech/smartassistant/modules/utils/session"
+
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/task"
@@ -21,6 +23,7 @@ type UpdateSceneReq struct {
 	DelConditionIds []int `json:"del_condition_ids"`
 	DelTaskIds      []int `json:"del_task_ids"`
 	CreateSceneReq
+	NewName *string `json:"new_name"`
 }
 
 // UpdateScene 用于处理修改场景接口的请求
@@ -48,6 +51,17 @@ func UpdateScene(c *gin.Context) {
 		return
 	}
 
+	if req.NewName != nil {
+		updates := map[string]interface{}{
+			"name": *req.NewName,
+		}
+		if err = entity.UpdateScene(sceneId, session.Get(c).AreaID, updates); err != nil {
+			return
+		}
+
+		return
+	}
+
 	req.wrapReq()
 
 	if err = req.updateScene(sceneId); err != nil {
@@ -65,6 +79,19 @@ func (req *UpdateSceneReq) validateRequest(sceneId int, c *gin.Context) (err err
 	if err != nil {
 		return
 	}
+
+	if req.NewName != nil {
+		if *req.NewName == "" {
+			err = errors.New(errors.BadRequest)
+			return
+		}
+
+		if err = entity.IsSceneNameExist(*req.NewName, sceneId, session.Get(c).AreaID); err != nil {
+			return
+		}
+		return
+	}
+
 	// 场景类型不允许修改
 	if scene.AutoRun != req.AutoRun {
 		err = errors.New(status.SceneTypeForbidModify)

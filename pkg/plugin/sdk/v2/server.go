@@ -54,16 +54,14 @@ func (p Server) OTA(req *proto.OTAReq, server proto.Plugin_OTAServer) error {
 			}
 			if v.Step >= 100 {
 				// ota成功后，设备将会重连
-				var d *device
-				d, err = p.Manager.GetDevice(req.Iid)
+				p.Manager.CloseDevice(req.Iid)
+				// 发现并且重连
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				err = p.discoverAndConnect(ctx, req.Iid)
+				cancel()
 				if err != nil {
-					logrus.Errorf("OTA get device err: %s", err.Error())
 					return err
 				}
-				d.mutex.Lock()
-				d.connected = false
-				d.mutex.Unlock()
-				p.Manager.HealthCheck(req.Iid)
 			}
 			if err = server.Send(&resp); err != nil {
 				logrus.Errorf("send ota response error: %s", err.Error())
@@ -73,36 +71,76 @@ func (p Server) OTA(req *proto.OTAReq, server proto.Plugin_OTAServer) error {
 	}
 }
 
-func (p Server) HealthCheck(context context.Context, req *proto.HealthCheckReq) (resp *proto.HealthCheckResp, err error) {
+func (p Server) HealthCheck(ctx context.Context, req *proto.HealthCheckReq) (*proto.HealthCheckResp, error) {
+	d, err := p.Manager.GetDevice(req.Iid)
+	if err != nil && !errors2.Is(err, DeviceNotExist) {
+		return nil, err
 
-	online := p.Manager.HealthCheck(req.Iid)
-	resp = &proto.HealthCheckResp{
+	}
+	online := p.Manager.HealthCheck(d, req.Iid)
+	// 当前设备, 因为子设备不会走发现接口
+	if !online {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			p.discoverAndConnect(ctx, req.Iid)
+		}()
+	}
+	if d != nil {
+		// 需要授权且未授权则更新物模型
+		if ad, ok := d.Device.(AuthDevice); ok && !ad.IsAuth() {
+			go p.Manager.notifyThingModelChange(req.Iid)
+			online = false
+		}
+	}
+
+	resp := &proto.HealthCheckResp{
 		Iid:    req.Iid,
 		Online: online,
 	}
-	return
+	return resp, nil
+}
+
+func (p Server) discoverAndConnect(ctx context.Context, iid string) error {
+	var (
+		d   *device
+		err error
+	)
+	if d, err = p.discoverDevice(ctx, iid); err != nil {
+		logrus.Errorf("discoverAndConnect: discover device %s err:%v", iid, err)
+		return err
+	}
+	go p.Manager.notifyThingModelAuth(d)
+	err = p.Manager.Connect(d, nil)
+	if err != nil {
+		logrus.Errorf("discoverAndConnect: manager connect device %s err:%v", iid, err)
+	}
+	return err
 }
 
 func (p Server) Discover(request *emptypb.Empty, server proto.Plugin_DiscoverServer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	devices := p.discover(ctx)
+	deviceMap := make(map[string]struct{})
+	for d := range devices {
+		if _, ok := deviceMap[d.Info().IID]; !ok {
+			ad, authRequired := d.(AuthDevice)
+			pd := &proto.Device{
+				Iid:          d.Info().IID,
+				Model:        d.Info().Model,
+				Name:         d.Info().Name,
+				Manufacturer: d.Info().Manufacturer,
+				Type:         d.Info().Type,
+				AuthRequired: authRequired,
+			}
+			if authRequired && len(ad.AuthParams()) != 0 {
+				pd.AuthParams, _ = json.Marshal(ad.AuthParams())
+			}
+			deviceMap[d.Info().IID] = struct{}{}
+			server.Send(pd)
+		}
 
-	devices, err := p.Manager.Devices()
-	if err != nil {
-		return err
-	}
-	for _, d := range devices {
-		ad, authRequired := d.(AuthDevice)
-		pd := proto.Device{
-			Iid:          d.Info().IID,
-			Model:        d.Info().Model,
-			Name:         d.Info().Name,
-			Manufacturer: d.Info().Manufacturer,
-			Type:         d.Info().Type,
-			AuthRequired: authRequired,
-		}
-		if authRequired && len(ad.AuthParams()) != 0 {
-			pd.AuthParams, _ = json.Marshal(ad.AuthParams())
-		}
-		server.Send(&pd)
 	}
 	return nil
 }
@@ -110,20 +148,19 @@ func (p Server) Discover(request *emptypb.Empty, server proto.Plugin_DiscoverSer
 func (p Server) Connect(ctx context.Context, req *proto.AuthReq) (resp *proto.GetInstancesResp, err error) {
 	logrus.Debugf("%s connect with auth params %v", req.Iid, req.Params)
 
-	var params map[string]interface{}
+	var (
+		params map[string]interface{}
+		d      *device
+	)
 	json.Unmarshal(req.Params, &params)
 
-	d, err := p.Manager.GetDevice(req.Iid)
+	d, err = p.Manager.GetDevice(req.Iid)
 	if err != nil {
 		if !errors2.Is(err, DeviceNotExist) {
 			return
 		}
 		// 找不到设备时，阻塞等待发现设备并初始化
-		if err = p.discoverDevice(ctx, req.Iid); err != nil {
-			return
-		}
-		d, err = p.Manager.GetDevice(req.Iid)
-		if err != nil {
+		if d, err = p.discoverDevice(ctx, req.Iid); err != nil {
 			return
 		}
 	}
@@ -146,8 +183,8 @@ func (p Server) Disconnect(ctx context.Context, req *proto.AuthReq) (resp *empty
 	return
 }
 
-func (p Server) GetInstances(context context.Context, request *proto.GetInstancesReq) (resp *proto.GetInstancesResp, err error) {
-	logrus.Debugf("%s GetAttribute", request.Iid)
+func (p Server) GetInstances(ctx context.Context, request *proto.GetInstancesReq) (resp *proto.GetInstancesResp, err error) {
+	logrus.Debugf("%s GetInstances", request.Iid)
 
 	tm, err := p.Manager.GetThingModel(request.Iid)
 	if err != nil {
@@ -336,7 +373,7 @@ func NewPluginServer(discoverFunc DiscoverFunc, opts ...OptionFunc) *Server {
 }
 
 // discover 发现设备并刷新发现设备列表
-func (p *Server) discover(ctx context.Context) {
+func (p *Server) discover(ctx context.Context) chan Device {
 	defer func() {
 		if r := recover(); r != nil {
 			logrus.Errorf("discovering panic: %v", r)
@@ -348,31 +385,19 @@ func (p *Server) discover(ctx context.Context) {
 		logrus.Debug("discovering...")
 		p.discoverFunc(ctx, devices)
 		logrus.Debug("discovering done")
+		<-ctx.Done()
 		close(devices)
 	}()
 
-	var dd []Device
-	for d := range devices {
-		if err := p.Manager.InitOrUpdateDevice(d); err != nil {
-			logrus.Errorf("init or update device err %s", err.Error())
-			return
-		}
-		dd = append(dd, d)
-	}
-	p.Manager.discoveredDevices = make([]Device, len(dd))
-	copy(p.Manager.discoveredDevices, dd)
-
-	logrus.Debugf("discover %d devices", len(p.Manager.discoveredDevices))
+	return devices
 }
 
 // discoverDevice 发现设备
-func (p *Server) discoverDevice(ctx context.Context, iid string) error {
-	defer func() {
-		if r := recover(); r != nil {
-			logrus.Errorf("discovering device panic: %v", r)
-		}
-	}()
-
+func (p *Server) discoverDevice(ctx context.Context, iid string) (*device, error) {
+	d := p.Manager.GetDiscoverDevice(iid)
+	if d != nil {
+		return d, nil
+	}
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Second*10)
@@ -381,30 +406,30 @@ func (p *Server) discoverDevice(ctx context.Context, iid string) error {
 
 	devices := make(chan Device, 10)
 	go func() {
-		defer close(devices)
 		logrus.Debugf("discovering %s...", iid)
 		p.discoverFunc(ctx, devices)
 		logrus.Debugf("discover %s done", iid)
+		<-ctx.Done()
+		close(devices)
 	}()
 
 	for {
 		select {
-		case <-time.NewTimer(time.Second * 10).C:
-			return DeviceNotExist
-		case d, ok := <-devices:
+		case <-time.After(10 * time.Second):
+			return nil, DeviceNotExist
+		case dd, ok := <-devices:
 			if !ok {
-				logrus.Debugf("discover %s done, not found", iid)
-				return DeviceNotExist
+				logrus.Infof("discover %s done, not found", iid)
+				return nil, DeviceNotExist
 			}
-			if d.Info().IID == iid {
-				if err := p.Manager.InitOrUpdateDevice(d); err != nil {
-					logrus.Errorf("init or update device err %s", err.Error())
-					return err
+			if dd.Info().IID == iid {
+				logrus.Infof("device %s found", iid)
+				d = newDevice(dd)
+				if old, ok := p.Manager.discoverDevices.LoadOrStore(iid, d); ok {
+					d = old.(*device)
 				}
-				logrus.Debugf("device %s found and init", iid)
-				return nil
+				return d, nil
 			}
 		}
 	}
-
 }

@@ -5,16 +5,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	types2 "github.com/docker/docker/api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/config"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
+	"github.com/zhiting-tech/smartassistant/modules/plugin/docker"
 	"github.com/zhiting-tech/smartassistant/modules/types"
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
 	"gopkg.in/oauth2.v3"
 	"io/ioutil"
 	"net"
@@ -65,6 +68,11 @@ func GetPin(c *gin.Context) {
 		return
 	}
 
+	if len(b) == 0 {
+		err = errors.Wrap(err, status.GeneratePinError)
+		return
+	}
+
 	if gjson.GetBytes(b, "status").Int() != 0 {
 		err = errors.Wrap(err, status.GeneratePinError)
 		return
@@ -75,6 +83,10 @@ func GetPin(c *gin.Context) {
 }
 
 func reqToHomeBridge(c *gin.Context, method, url string, param map[string]interface{}) (b []byte, err error) {
+
+	if !isHomeBridgeExist(c) {
+		return
+	}
 
 	var content []byte
 
@@ -118,4 +130,21 @@ func getHomeBridgeApi(path string) string {
 	// 使用 ~ 从根目录开始索引
 	// 避免 https:///mnt/data/zt-smartassistant/ 无法识别
 	return fmt.Sprintf("http://~%s/%s", getHomeBridgeSockAddr(), path)
+}
+
+func isHomeBridgeExist(c *gin.Context) bool {
+	dClient := docker.GetClient().DockerClient
+	containerList, err := dClient.ContainerList(c, types2.ContainerListOptions{All: true})
+	if err != nil {
+		logger.Errorf("get containerList error: ", err)
+		return false
+	}
+
+	for _, container := range containerList {
+		if container.Labels["com.docker.compose.service"] == "homebridge" {
+			return true
+		}
+	}
+
+	return false
 }

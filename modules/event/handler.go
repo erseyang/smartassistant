@@ -3,10 +3,10 @@ package event
 import (
 	"encoding/json"
 	"errors"
-	"sync"
-
 	"github.com/sirupsen/logrus"
+	"github.com/zhiting-tech/smartassistant/modules/api/message"
 	"gorm.io/gorm"
+	"sync"
 
 	"github.com/zhiting-tech/smartassistant/modules/device"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
@@ -22,11 +22,13 @@ import (
 
 func RegisterEventFunc(ws *websocket.Server) {
 	event.RegisterEvent(event.AttributeChange, ws.MulticastMsg,
-		UpdateDeviceShadowBeforeExecuteTask, RecordDeviceState)
+		UpdateDeviceShadowBeforeExecuteTask, RecordDeviceState,
+		SaveAndSendAlarmMsg)
 	event.RegisterEvent(event.DeviceDecrease, ws.MulticastMsg)
 	event.RegisterEvent(event.DeviceIncrease, ws.MulticastMsg)
 	event.RegisterEvent(event.OnlineStatus, ws.MulticastMsg)
 	event.RegisterEvent(event.ThingModelChange, UpdateThingModel, ws.MulticastMsg)
+	event.RegisterEvent(event.MessageCenter, ws.MsgCenterMulticast)
 }
 
 func UpdateThingModel(em event.EventMessage) (err error) {
@@ -210,4 +212,68 @@ func RecordDeviceState(em event.EventMessage) (err error) {
 	state.Val = ae.Val
 	stateBytes, _ := json.Marshal(state)
 	return entity.InsertDeviceState(d, stateBytes)
+}
+
+// SaveAndSendAlarmMsg 入库和推送告警消息
+func SaveAndSendAlarmMsg(em event.EventMessage) (err error) {
+	deviceID := em.GetDeviceID()
+	d, err := entity.GetDeviceByID(deviceID)
+	if err != nil {
+		return
+	}
+	tm, err := d.GetThingModel()
+	if err != nil {
+		return
+	}
+	ae := em.Param["attr"].(definer.AttributeEvent)
+	attribute, err := tm.GetAttribute(ae.IID, ae.AID)
+	if err != nil {
+		return
+	}
+	switch d.Type {
+	case "water_leak_sensor":
+		if attribute.Type == "leak_detected" {
+			flag := false
+			switch ae.Val.(type) {
+			case int:
+				flag = ae.Val.(int) == 1
+			case int32:
+				flag = ae.Val.(int32) == 1
+			case int64:
+				flag = ae.Val.(int64) == 1
+			case float32:
+				flag = ae.Val.(float32) == 1
+			case float64:
+				flag = ae.Val.(float64) == 1
+			case bool:
+				flag = ae.Val.(bool) == true
+			}
+
+			if flag {
+				msgRecord := entity.NewAlarmMessageRecord(d.AreaID,deviceID, d.LocationID, d.Name, "检测到浸水告警，请及时查看")
+				go message.GetMessagesManager().SendMsg(msgRecord)
+			}
+		}
+	case "door_lock":
+		if attribute.Type == "lock_event" {
+			flag := false
+			switch ae.Val.(type) {
+			case int:
+				flag = ae.Val.(int) == 7
+			case int32:
+				flag = ae.Val.(int32) == 7
+			case int64:
+				flag = ae.Val.(int64) == 7
+			case float32:
+				flag = ae.Val.(float32) == 7
+			case float64:
+				flag = ae.Val.(float64) == 7
+			}
+			if flag {
+				msgRecord := entity.NewAlarmMessageRecord(d.AreaID,deviceID, d.LocationID, d.Name, "胁迫告警，请及时查看")
+				go message.GetMessagesManager().SendMsg(msgRecord)
+			}
+		}
+	}
+	return
 }

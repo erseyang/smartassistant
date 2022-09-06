@@ -66,7 +66,7 @@ func ListPlugin(c *gin.Context) {
 	for _, plg := range ps {
 		p := Plugin{
 			Plugin: brand.Plugin{
-				Name:    plg.PluginID,
+				Name:    plg.Name,
 				Brand:   plg.Brand,
 				Version: plg.Version,
 				ID:      plg.PluginID,
@@ -90,8 +90,10 @@ func (r Resp) Swap(i, j int) {
 }
 
 func (r Resp) Less(i, j int) bool {
-	iAscii := strings_utils.GetInitialAscii(r.Plugins[i].Name)
-	jAscii := strings_utils.GetInitialAscii(r.Plugins[j].Name)
+	iPinyin := strings_utils.GetInitialPinyin(r.Plugins[i].Name)
+	iAscii := strings_utils.GetInitialAscii(iPinyin)
+	jPinyin := strings_utils.GetInitialPinyin(r.Plugins[j].Name)
+	jAscii := strings_utils.GetInitialAscii(jPinyin)
 	return iAscii < jAscii
 }
 

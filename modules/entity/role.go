@@ -188,8 +188,8 @@ func (r *Role) DelPermission(p types.Permission) error {
 	return GetDB().Where(permission).Delete(RolePermission{}).Error
 }
 
-func GetManagerRoleWithDB(db *gorm.DB) (roleInfo Role, err error) {
-	err = db.Where("is_manager = ?", true).First(&roleInfo).Error
+func GetManagerRoleWithDB(db *gorm.DB, areaID uint64) (roleInfo Role, err error) {
+	err = db.Where("is_manager = ? and area_id = ?", true, areaID).First(&roleInfo).Error
 	if err != nil {
 		err = errors2.Wrap(err, errors2.InternalServerErr)
 		return

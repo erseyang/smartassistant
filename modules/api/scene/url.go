@@ -18,6 +18,7 @@ func InitSceneRouter(r gin.IRouter) {
 	sceneGroup := r.Group("scenes", middleware.RequireAccount)
 	{
 		sceneGroup.POST("", CreateScene)
+		sceneGroup.DELETE("", BatchDeleteScene)
 		sceneGroup.DELETE(":id", requireBelongsToUser, DeleteScene)
 		sceneGroup.PUT(":id", requireBelongsToUser, middleware.RequirePermission(types.SceneUpdate), UpdateScene)
 		sceneGroup.GET("", ListScene)

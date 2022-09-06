@@ -218,7 +218,12 @@ func (c *ProxyControlClient) HandleMsg(pcsc *control.ProxyControlStreamContext, 
 			return
 		}
 
-		c.base.HandleProxyControlStreamMsg(pcsc, msg)
+		go func(pcsc *control.ProxyControlStreamContext, msg *proto.ProxyControlStreamMsg) {
+			if err := c.base.HandleProxyControlStreamMsg(pcsc, msg); err != nil {
+				c.logger.Warnf("handle proxy control stream msg error %v", msg)
+			}
+		}(pcsc, msg)
+
 	}
 }
 

@@ -16,6 +16,7 @@ const (
 	Door                      ServiceType = "door"
 	Doorbell                  ServiceType = "doorbell"
 	MotionSensor              ServiceType = "motion_sensor"                // 人体传感器
+	SmokeSensor               ServiceType = "smoke_sensor"                 // 感烟火灾探测报警器
 	LeakSensor                ServiceType = "leak_sensor"                  // 水浸传感器
 	BatteryService            ServiceType = "battery"                      // 电池服务
 	SecuritySystem            ServiceType = "security_system"              // 安全服务

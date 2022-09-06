@@ -73,7 +73,7 @@ func transferOwner(c *gin.Context) {
 			return err
 		}
 
-		roleManager, err := entity.GetManagerRoleWithDB(tx)
+		roleManager, err := entity.GetManagerRoleWithDB(tx, user.AreaID)
 		if err != nil {
 			return err
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/zhiting-tech/smartassistant/modules/entity"
 	"github.com/zhiting-tech/smartassistant/modules/types"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/codes"
 
 	"github.com/zhiting-tech/smartassistant/modules/cloud"
 	"github.com/zhiting-tech/smartassistant/modules/config"
@@ -20,7 +21,6 @@ import (
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
 	errors2 "github.com/zhiting-tech/smartassistant/pkg/errors"
 	"github.com/zhiting-tech/smartassistant/pkg/logger"
-	"google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
 )
 
@@ -222,28 +222,61 @@ func (m *Manager) DeleteBackup(fn string) error {
 // StartUpdateJob 下载新版镜像，通知supervisor以新镜像重启
 func (m *Manager) StartUpdateJobWithContext(ctx context.Context, version string) (err error) {
 	var (
-		result *cloud.SoftwareLastVersionHttpResult
-		req    proto.UpdateReq
+		result         *cloud.SoftwareLastVersionHttpResult
+		req            proto.UpdateReq
+		extensionsResp *proto.GetExtensionsResp
 	)
+
+	extensionsResp, err = GetClient().GetExtensionsWithContext(ctx)
+	if err != nil {
+		code := grpcStatus.Code(err)
+		if code == codes.Unavailable {
+			err = errors2.Wrap(err, status.SupervisorNotStart)
+		} else {
+			err = errors2.Wrap(err, errors2.InternalServerErr)
+		}
+	}
+
 	if result, err = cloud.GetLastSoftwareVersionWithContext(ctx); err != nil {
 		return
 	}
 
-	req.SoftwareVersion = result.Data.Version
-	for _, subservice := range result.Data.Services {
-		if !docker.GetClient().IsImageAdd(subservice.Image) {
-			logger.Debugf("image not found, pull %s", subservice.Image)
-			err = docker.GetClient().Pull(subservice.Image)
-			if err != nil {
-				err = errors2.New(status.ImagePullErr)
-				return
+	extensions := []string{"smartassistant"}
+	if extensionsResp != nil {
+		for _, extension := range extensionsResp.Extensions {
+			extensions = append(extensions, extension.Name)
+		}
+	}
+
+	contains := func(extensionName string) bool {
+		for _, e := range extensions {
+			if e == extensionName {
+				return true
 			}
 		}
-		req.UpdateItems = append(req.UpdateItems, &proto.UpdateItem{
-			ServiceName: subservice.Name,
-			NewImage:    subservice.Image,
-			Version:     subservice.Version,
-		})
+
+		return false
+	}
+
+	req.SoftwareVersion = result.Data.Version
+	for _, subservice := range result.Data.Services {
+		if subservice.Extension == "" || contains(subservice.Extension) {
+			logger.Infof("pull image %s", subservice.Image)
+			if !docker.GetClient().IsImageAdd(subservice.Image) {
+				logger.Debugf("image not found, pull %s", subservice.Image)
+				err = docker.GetClient().Pull(subservice.Image)
+				if err != nil {
+					err = errors2.New(status.ImagePullErr)
+					return
+				}
+			}
+			logger.Infof("pull image %s success", subservice.Image)
+			req.UpdateItems = append(req.UpdateItems, &proto.UpdateItem{
+				ServiceName: subservice.Name,
+				NewImage:    subservice.Image,
+				Version:     subservice.Version,
+			})
+		}
 	}
 
 	err = stopAllPlugins()

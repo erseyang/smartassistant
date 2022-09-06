@@ -14,6 +14,7 @@ const (
 	DeviceDecrease   EventType = "device_decrease"
 	ThingModelChange EventType = "thing_model_change"
 	OnlineStatus     EventType = "online_status"
+	MessageCenter    EventType = "message_center"
 )
 
 type EventMessage struct {

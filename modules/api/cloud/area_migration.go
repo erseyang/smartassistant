@@ -8,6 +8,7 @@ import (
 	errors2 "errors"
 	"fmt"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
+	"github.com/zhiting-tech/smartassistant/modules/device"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -326,7 +327,8 @@ func restoreCloudAreaDBData(db *gorm.DB, tx *gorm.DB) (err error) {
 			return
 		}
 	}
-
+	// 为角色添加sa设备权限
+	err = device.AddDevicePermissionForRoles(saDevice, tx)
 	return
 }
 

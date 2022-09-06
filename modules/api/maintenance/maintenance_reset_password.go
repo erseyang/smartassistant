@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/maintenance"
+	"github.com/zhiting-tech/smartassistant/pkg/errors"
 )
 
 type ResetProPasswordReq struct {
@@ -21,6 +22,10 @@ func resetProPassword(c *gin.Context) {
 		req  ResetProPasswordReq
 		resp ResetProPasswordResp
 	)
+	if err = c.ShouldBindJSON(&req); err != nil {
+		err = errors.Wrap(err, errors.BadRequest)
+		return
+	}
 	defer func() {
 		t, exists := c.Get(TimeKey)
 		v, ok := t.(int64)

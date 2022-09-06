@@ -35,6 +35,7 @@ var basisList = map[string]struct{}{
 	"zt-nginx":       {},
 	"zt-vue":         {},
 	"disk-manager":   {},
+	"homebridge":     {},
 }
 
 var serviceList = map[string]string{ // 服务名称映射

@@ -242,7 +242,7 @@ func (old *Service) Update(update Service) (err error) {
 		logrus.Warnf("service type mismatch: %s!=%s", old.Type, update.Type)
 		return nil
 	}
-
+	old.Attributes = make([]Attribute, len(update.Attributes))
 	copy(old.Attributes, update.Attributes)
 	return nil
 }

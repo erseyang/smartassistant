@@ -1,20 +1,20 @@
 package user
 
 import (
-	"strconv"
-
-	"github.com/zhiting-tech/smartassistant/modules/file"
-
+	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/zhiting-tech/smartassistant/modules/api/area"
+	"github.com/zhiting-tech/smartassistant/modules/api/message"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/oauth"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
+	"github.com/zhiting-tech/smartassistant/modules/file"
 	"github.com/zhiting-tech/smartassistant/modules/types"
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
 	jwt2 "github.com/zhiting-tech/smartassistant/modules/utils/jwt"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
-
-	"github.com/gin-gonic/gin"
+	"github.com/zhiting-tech/smartassistant/pkg/logger"
+	"strconv"
 
 	"github.com/zhiting-tech/smartassistant/pkg/errors"
 )
@@ -35,7 +35,7 @@ type CheckQrCodeResp struct {
 	AreaInfo area.Area       `json:"area_info"`
 }
 
-func (req *checkQrCodeReq) validateRequest(c *gin.Context) (err error) {
+func (req *checkQrCodeReq) validateRequest(c *gin.Context) (creatorID int, err error) {
 	var curArea entity.Area
 	if err = c.BindJSON(&req); err != nil {
 		return
@@ -46,7 +46,7 @@ func (req *checkQrCodeReq) validateRequest(c *gin.Context) (err error) {
 	if err != nil {
 		//	二维码是否在有效时间
 		if err.Error() == jwt2.ErrTokenIsExpired.Error() {
-			return errors.New(status.QRCodeExpired)
+			return creatorID, errors.New(status.QRCodeExpired)
 		}
 		err = errors.Wrap(err, status.QRCodeInvalid)
 		return
@@ -62,7 +62,7 @@ func (req *checkQrCodeReq) validateRequest(c *gin.Context) (err error) {
 	}
 
 	// 判断二维码创建者是否有生成二维码权限
-	var creatorID = claims.UID
+	creatorID = claims.UID
 	if !entity.JudgePermit(creatorID, types.AreaGetCode) {
 		err = errors.New(status.QRCodeCreatorDeny)
 		return
@@ -113,15 +113,16 @@ func (req *checkQrCodeReq) validateRequest(c *gin.Context) (err error) {
 // CheckQrCode 用于处理扫描邀请二维码接口的请求
 func CheckQrCode(c *gin.Context) {
 	var (
-		req  checkQrCodeReq
-		err  error
-		resp CheckQrCodeResp
+		req       checkQrCodeReq
+		err       error
+		resp      CheckQrCodeResp
+		inviterId int
 	)
 	defer func() {
 		response.HandleResponse(c, err, &resp)
 	}()
 
-	if err = req.validateRequest(c); err != nil {
+	if inviterId, err = req.validateRequest(c); err != nil {
 		return
 	}
 
@@ -130,6 +131,14 @@ func CheckQrCode(c *gin.Context) {
 		return
 	}
 
+	inviter, err := entity.GetUserByID(inviterId)
+	if err != nil {
+		logger.Warning("GetUserByID error", err)
+		return
+	}
+	// 入库推送成员加入消息
+	msgRecord := entity.NewMemberChangeMessageRecord(req.areaId, fmt.Sprintf(message.ContentMemberJoin, resp.UserInfo.Nickname, inviter.Nickname, req.areaType.String()))
+	go message.GetMessagesManager().SendMsg(msgRecord)
 }
 
 func (req *checkQrCodeReq) checkQrCode(c *gin.Context) (resp CheckQrCodeResp, err error) {

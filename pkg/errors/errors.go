@@ -2,6 +2,8 @@ package errors
 
 import (
 	"fmt"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"regexp"
 
 	"github.com/pkg/errors"
@@ -14,6 +16,10 @@ type Error struct {
 
 func (e Error) Error() string {
 	return e.Code.Reason
+}
+
+func (e Error) GRPCStatus() *status.Status {
+	return status.New(codes.Code(e.Code.Status), e.Code.Reason)
 }
 
 // func (e Error) Format(f fmt.State, verb rune) {

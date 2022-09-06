@@ -43,10 +43,10 @@ func NewSmbMountStr(currentAccountName, accountName, passwd string) *SmbMountStr
 
 func (smb *SmbMountStr) SetMountPath(path string) error {
 	if path == "" {
-		path = filepath.Join(config.GetConf().SmartAssistant.RuntimePath, "run", "wangpan")
+		path = filepath.Join(config.GetConf().SmartAssistant.RuntimePath, "data", "wangpan")
 	}
 	if _, err := os.Stat(path); err != nil {
-		if err = os.Mkdir(path, 0777); err != nil {
+		if err = os.MkdirAll(path, 0777); err != nil {
 			logger.Error("SetMountPath err:", err)
 			return err
 		}
@@ -98,7 +98,7 @@ func (smb *SmbMountStr) configFileProcess(f func() ([][]string, int, error)) err
 
 func (smb *SmbMountStr) initAccountConf() ([][]string, int, error) {
 	var (
-		fields = make([][]string, 3, 3)
+		fields = make([][]string, 3)
 	)
 	passwd := fmt.Sprintf(PASSWD, "nobody", "nobody")
 	shadow := fmt.Sprintf(SHADOW, "nobody")
@@ -121,7 +121,7 @@ func (smb *SmbMountStr) initAccountConf() ([][]string, int, error) {
 
 func (smb *SmbMountStr) addAccountConf() ([][]string, int, error) {
 	var (
-		fields = make([][]string, 3, 3)
+		fields = make([][]string, 3)
 	)
 
 	if _, err := os.Stat(smb.mountPath("passwd")); err != nil {
@@ -149,7 +149,7 @@ func (smb *SmbMountStr) addAccountConf() ([][]string, int, error) {
 
 func (smb *SmbMountStr) updateAccountConf() ([][]string, int, error) {
 	var (
-		fields = make([][]string, 3, 3)
+		fields = make([][]string, 3)
 	)
 	if smb.AccountName == "" {
 		fields[0] = []string{
@@ -167,7 +167,7 @@ func (smb *SmbMountStr) updateAccountConf() ([][]string, int, error) {
 
 func (smb *SmbMountStr) delAccountConf() ([][]string, int, error) {
 	var (
-		fields = make([][]string, 3, 3)
+		fields = make([][]string, 3)
 	)
 	fields[0] = []string{fmt.Sprintf("/%s:x/d", smb.CurrentAccountName), smb.mountPath("passwd")}
 	fields[1] = []string{fmt.Sprintf("/%s:!/d", smb.CurrentAccountName), smb.mountPath("shadow")}

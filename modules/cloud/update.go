@@ -39,9 +39,10 @@ type SoftwareLastVersionResult struct {
 }
 
 type SoftwareLastVersionSubServiceResult struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	Image   string `json:"image"`
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	Image     string `json:"image"`
+	Extension string `json:"extension"`
 }
 
 func GetLastSoftwareVersionWithContext(ctx context.Context) (result *SoftwareLastVersionHttpResult, err error) {

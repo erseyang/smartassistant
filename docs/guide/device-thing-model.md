@@ -492,6 +492,14 @@
 | permission | read/notify |
 | value_type | bool        |
 
+### Smoke Detected
+
+| property   | value        |
+|------------|--------------|
+| type       | smoke_detected |
+| permission | read/notify  |
+| value_type | int          |
+
 ## Services
 
 ### Info Service
@@ -682,6 +690,12 @@
 | type       | media                                                                                                                                                                                                                                                                                                                                                      |
 | attributes | [media resolution options](#media-resolution-options) <br/> [Media Resolution](#media-resolution) <br/> [Media Frame Rate Limit](#media-frame-rate-limit) <br/> [Media Bit Rate Limit](#media-bit-rate-limit) <br/> [Media Encoding Interval](#media-encoding-interval) <br/> [Media Quality](#media-quality)<br/>[Media GovLength](#media-govLength)<br/> |
 
+### SmokeSensor
+
+| property   | value                               |
+|------------|-------------------------------------|
+| type       | media                               |
+| attributes | [smoke detected](###Smoke Detected) |
 
 
 

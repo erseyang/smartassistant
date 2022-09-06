@@ -19,6 +19,7 @@ const (
 	AddDeviceFail
 	AttrNotFound
 	DeviceConnectTimeout
+	GatewayZbDeviceLimit
 )
 
 func init() {
@@ -37,4 +38,5 @@ func init() {
 	errors.NewCode(AddDeviceFail, "添加设备失败")
 	errors.NewCode(AttrNotFound, "属性不存在")
 	errors.NewCode(DeviceConnectTimeout, "设备连接超时")
+	errors.NewCode(GatewayZbDeviceLimit, "网关Zigbee设备连接数已达上限")
 }

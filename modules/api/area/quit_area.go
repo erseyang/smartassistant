@@ -1,10 +1,11 @@
 package area
 
 import (
-	"strconv"
-
+	"fmt"
+	"github.com/zhiting-tech/smartassistant/modules/api/message"
 	"github.com/zhiting-tech/smartassistant/modules/extension"
 	pb "github.com/zhiting-tech/smartassistant/pkg/extension/proto"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/cloud"
@@ -72,6 +73,11 @@ func QuitArea(c *gin.Context) {
 		err = errors.Wrap(err, errors.InternalServerErr)
 		return
 	}
+
+	user, _ := entity.GetUserByID(userID)
+	// 入库推送成员退出消息
+	msgRecord := entity.NewMemberChangeMessageRecord(areaID, fmt.Sprintf(message.ContentMemberExit, user.Nickname, area.AreaType.String()))
+	go message.GetMessagesManager().SendMsg(msgRecord)
 
 	return
 

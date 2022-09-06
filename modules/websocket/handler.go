@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	errors2 "errors"
+	"fmt"
+	"github.com/zhiting-tech/smartassistant/modules/api/message"
 	"sort"
 	"time"
 
@@ -167,8 +169,14 @@ type ConnectParams struct {
 
 // ConnectDevice 连接设备
 func ConnectDevice(req Request) (result interface{}, err error) {
+	var (
+		user entity.User
+		flag = true // 判断是否推送消息，默认发送
+	)
+
 	if !entity.JudgePermit(req.User.UserID, types.DeviceAdd) {
-		err = errors.New(status.Deny)
+		//err = errors.New(status.Deny)
+		err = errors2.New(errors.GetCodeReason(status.Deny))
 		return
 	}
 
@@ -185,6 +193,13 @@ func ConnectDevice(req Request) (result interface{}, err error) {
 	}
 	resp := connectDeviceResp{
 		ThingModel: tm,
+	}
+
+
+	if user, err = entity.GetUserByID(req.User.UserID);err != nil {
+		logger.Warningf("ConnectDevice GetUserByID %v, err:", req.User.UserID, err)
+		flag = false
+		err = nil
 	}
 
 	isGateway := tm.IsBridge()
@@ -212,6 +227,11 @@ func ConnectDevice(req Request) (result interface{}, err error) {
 			continue
 		}
 
+		// 消息入库&发送
+		if flag{
+			msg := entity.NewDeviceChangeMessageRecord(req.User.AreaID, fmt.Sprintf(message.ContentDeviceAdd, user.Nickname, e.Name))
+			go message.GetMessagesManager().SendMsg(msg)
+		}
 		// 记录添加设备信息
 		go analytics.RecordStruct(analytics.EventTypeDeviceAdd, req.User.UserID, e)
 
@@ -247,7 +267,8 @@ func ConnectDevice(req Request) (result interface{}, err error) {
 
 	}
 	if resp.Device.ID == 0 {
-		err = errors.New(status.AddDeviceFail)
+		//err = errors.New(status.AddDeviceFail)
+		err = errors2.New(errors.GetCodeReason(status.AddDeviceFail))
 	}
 	return resp, err
 }
@@ -255,7 +276,8 @@ func ConnectDevice(req Request) (result interface{}, err error) {
 // DisconnectDevice 设备断开连接（取消配对等）
 func DisconnectDevice(req Request) (result interface{}, err error) {
 	var (
-		instanceDevice entity.Device
+		user  entity.User
+		flag = true // 判断是否推送消息，默认发送
 	)
 	if !entity.JudgePermit(req.User.UserID, types.DeviceDelete) {
 		err = errors.New(status.Deny)
@@ -288,33 +310,36 @@ func DisconnectDevice(req Request) (result interface{}, err error) {
 	var devices []entity.Device
 	em := event.NewEventMessage(event.DeviceDecrease, req.User.AreaID)
 
-	// 如果是网关，遍历设备并删除
-	for _, ins := range tm.Instances {
-		instanceDevice, err = entity.GetPluginDevice(req.User.AreaID, req.Domain, ins.IID)
-		if err != nil{
-			logger.Errorf("get device by iid %s err %s", ins.IID, err)
-			err = nil
-			continue
-		}
-		if err = entity.DelDeviceByID(instanceDevice.ID); err != nil {
-			logger.Errorf("del device by iid %s err %s", ins.IID, err)
-			err = nil
-			continue
-		}
-		// 删除子设备连带删除相关设备状态日志
-		if err = entity.DeleteStatesByDeviceId(instanceDevice.ID); err != nil{
-			logger.Errorf("del device state log err device_id: %s err %s", instanceDevice.ID, err)
-			err = nil
-			continue
-		}
-
-
-		devices = append(devices, entity.Device{
-			PluginID: d.PluginID,
-			IID:      d.IID,
-		})
+	if user, err = entity.GetUserByID(req.User.UserID);err != nil {
+		logger.Warningf("DisconnectDevice GetUserByID %v, err:", req.User.UserID, err)
+		err = nil
+		flag = false
 	}
 
+	// 先删除主设备，以防类似摄像头的设备物模型的instances是为null的情况
+	dev := delDevice(req, p.IID)
+	// 入库推送子设备删除消息
+	msg := entity.NewDeviceChangeMessageRecord(req.User.AreaID, fmt.Sprintf(message.ContentDeviceDel, user.Nickname, dev.Name))
+	go message.GetMessagesManager().SendMsg(msg)
+	devices = append(devices, entity.Device{
+		PluginID: d.PluginID,
+		IID:      d.IID,
+	})
+	// 如果是网关，遍历设备并删除
+	for _, ins := range tm.Instances {
+		if ins.IsBridge() {
+			continue
+		}
+		dev = delDevice(req, ins.IID)
+		if flag{
+			msg = entity.NewDeviceChangeMessageRecord(req.User.AreaID, fmt.Sprintf(message.ContentDeviceDel, user.Nickname, dev.Name))
+			go message.GetMessagesManager().SendMsg(msg)
+		}
+		devices = append(devices, entity.Device{
+			PluginID: d.PluginID,
+			IID:      ins.IID,
+		})
+	}
 	// 通知SC
 
 	em.Param["deleted_devices"] = devices
@@ -322,6 +347,30 @@ func DisconnectDevice(req Request) (result interface{}, err error) {
 	// 记录删除设备信息
 	go analytics.RecordStruct(analytics.EventTypeDeviceDelete, req.User.UserID, d)
 
+	return
+}
+
+func delDevice(req Request, IID string) (instanceDevice entity.Device) {
+	var (
+		err error
+	)
+	instanceDevice, err = entity.GetPluginDevice(req.User.AreaID, req.Domain, IID)
+	if err != nil {
+		logger.Errorf("get device by iid %s err %s", IID, err)
+		err = nil
+		return
+	}
+	if err = entity.DelDeviceByID(instanceDevice.ID); err != nil {
+		logger.Errorf("del device by iid %s err %s", IID, err)
+		err = nil
+		return
+	}
+	// 删除子设备连带删除相关设备状态日志
+	if err = entity.DeleteStatesByDeviceId(instanceDevice.ID); err != nil {
+		logger.Errorf("del device state log err device_id: %s err %s", instanceDevice.ID, err)
+		err = nil
+		return
+	}
 	return
 }
 
@@ -552,6 +601,7 @@ type SupportSubDevice struct {
 	LogoURL       string `json:"logo_url"`
 	ZigbeeSupport bool   `json:"zigbee_support"`
 	BleSupport    bool   `json:"ble_support"`
+	Name          string `json:"name"`
 }
 
 func SubDevices(req Request) (result interface{}, err error) {
@@ -593,6 +643,7 @@ func SubDevices(req Request) (result interface{}, err error) {
 	for _, deviceConf := range config.SupportDevices {
 		if deviceConf.IsGatewaySupport(d.Model) {
 			sd := SupportSubDevice{
+				Name:          deviceConf.Name,
 				ZigbeeSupport: deviceConf.ZigbeeSupport,
 				BleSupport:    deviceConf.BleSupport,
 				Model:         deviceConf.Model,
@@ -675,6 +726,30 @@ func UpdateDeviceService(req Request) (result interface{}, err error) {
 	return
 }
 
+type updateDeviceReq struct {
+	IID      string `json:"iid"`
+	SyncData string `json:"sync_data"`
+}
+
+func UpdateDevice(req Request) (result interface{}, err error) {
+	var updateReq updateDeviceReq
+	if err = json.Unmarshal(req.Data, &updateReq); err != nil {
+		return
+	}
+	d, err := entity.GetPluginDevice(req.User.AreaID, req.Domain, updateReq.IID)
+	if err != nil {
+		return
+	}
+	var updateDevice entity.Device
+	if len(updateReq.SyncData) != 0 {
+		updateDevice.SyncData = updateReq.SyncData
+	}
+	if err = entity.UpdateDevice(d.ID, updateDevice); err != nil {
+		return
+	}
+	return
+}
+
 func RegisterCmd() {
 	RegisterCallFunc(ServiceOTA, OTA)                     // OTA
 	RegisterCallFunc(ServiceConnect, ConnectDevice)       // 添加/连接设备
@@ -687,4 +762,5 @@ func RegisterCmd() {
 	RegisterCallFunc(ServiceListGateways, ListGateways)               // 列出网关列表
 	RegisterCallFunc(ServiceDeviceStates, DeviceStates)               // 设备状态（日志）
 	RegisterCallFunc(ServiceUpdateDeviceService, UpdateDeviceService) // 更新设备服务
+	RegisterCallFunc(ServiceUpdateDevice, UpdateDevice)               // 更新设备
 }

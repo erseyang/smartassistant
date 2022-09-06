@@ -53,8 +53,6 @@ func Run(p *Server) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	go p.discovering()
-
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)

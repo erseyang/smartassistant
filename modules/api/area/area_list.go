@@ -3,6 +3,7 @@ package area
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
+	"github.com/zhiting-tech/smartassistant/modules/config"
 	"github.com/zhiting-tech/smartassistant/modules/utils/session"
 	"strconv"
 
@@ -18,10 +19,11 @@ type areaListResp struct {
 
 // Area 家庭信息
 type Area struct {
-	Name string `json:"name,omitempty"` // 家庭名称
-	ID   string `json:"id"`             // 家庭ID
-	AreaType entity.AreaType	`json:"area_type,omitempty"`			// 该区域类型
-	IsBindCloud bool `json:"is_bind_cloud,omitempty"`  // 是否绑定云端sa
+	Name          string          `json:"name,omitempty"`          // 家庭名称
+	ID            string          `json:"id"`                      // 家庭ID
+	AreaType      entity.AreaType `json:"area_type,omitempty"`     // 该区域类型
+	IsBindCloud   bool            `json:"is_bind_cloud,omitempty"` // 是否绑定云端（sc）
+	IsCloudSAArea bool            `json:"is_cloud_sa_area"`        // 是否是云端sa家庭
 }
 
 // ListArea 用于处理家庭列表接口的请求
@@ -51,11 +53,11 @@ func ListArea(c *gin.Context) {
 func WrapAreas(areas []entity.Area) (result []Area) {
 	for _, s := range areas {
 		area := Area{
-			ID:   strconv.FormatUint(s.ID, 10),
-			Name: s.Name,
+			ID:            strconv.FormatUint(s.ID, 10),
+			Name:          s.Name,
+			IsCloudSAArea: config.IsCloudSA(),
 		}
 		result = append(result, area)
-
 	}
 
 	return result

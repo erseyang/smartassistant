@@ -314,6 +314,10 @@ func (t *Instance) NewLeakSensor() *BaseService {
 	return t.NewService(thingmodel.LeakSensor).
 		WithAttributes(thingmodel.LeakDetected)
 }
+func (t *Instance) NewSmokeSensor() *BaseService {
+	return t.NewService(thingmodel.SmokeSensor).
+		WithAttributes(thingmodel.SmokeDetected)
+}
 func (t *Instance) NewLock() *BaseService {
 	return t.NewService(thingmodel.Lock).
 		WithAttributes(thingmodel.Battery)

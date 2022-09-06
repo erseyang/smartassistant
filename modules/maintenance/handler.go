@@ -43,6 +43,7 @@ func HandleMaintenanceChange(event int) {
 			ExitMaintenance()
 			areas, err := entity.GetAreas()
 			if err != nil {
+				return
 			}
 			for _, area := range areas {
 				owner, err := entity.GetAreaOwner(area.ID)

@@ -24,7 +24,10 @@ func GetJobServer() *JobServer {
 }
 
 func (s *JobServer) Run(ctx context.Context) {
-	s.Cron.AddFunc("59 23 * * *", LogRemove)
+	if _, err := s.Cron.AddFunc("59 23 * * *", RemoveLogTask); err != nil {
+		logger.Info(err)
+	}
+
 	s.Cron.Start()
 	<-ctx.Done()
 	logger.Warning("job server stopped")

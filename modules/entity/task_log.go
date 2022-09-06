@@ -24,10 +24,10 @@ const (
 )
 
 var (
-	taskErrMap = map[errors.Code]TaskResultType{
-		errors.GetCode(status.SceneNotExist):  TaskSceneAlreadyDeleted,
-		errors.GetCode(status.DeviceNotExist): TaskDeviceAlreadyDeleted,
-		errors.GetCode(status.DeviceOffline):  TaskDeviceDisConnect,
+	taskErrMap = map[int]TaskResultType{
+		status.SceneNotExist:  TaskSceneAlreadyDeleted,
+		status.DeviceNotExist: TaskDeviceAlreadyDeleted,
+		status.DeviceOffline:  TaskDeviceDisConnect,
 	}
 )
 
@@ -71,7 +71,7 @@ func UpdateTaskLog(taskID string, taskErr error) error {
 	if taskErr != nil {
 		update.Result = TaskFail
 		if v, ok := taskErr.(errors.Error); ok { // 判断错误类型
-			update.Result, _ = taskErrMap[v.Code]
+			update.Result, _ = taskErrMap[v.Code.Status]
 		}
 		update.Error = taskErr.Error()
 	}
@@ -104,7 +104,7 @@ func UpdateParentLog(parentTaskID string) error {
 	var errCount int
 	for _, tl := range taskLogs {
 		if tl.Result == 0 {
-			return nil
+			continue
 		}
 		if tl.Error != "" {
 			errCount += 1

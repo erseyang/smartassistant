@@ -124,3 +124,13 @@ func (s *Server) MulticastMsg(em event.EventMessage) error {
 	s.bucket.Publish(topic, ev)
 	return nil
 }
+
+// MsgCenterMulticast 成员、设备、家居桥接变更等，会多播给所有订阅了主题的客户端
+func (s *Server) MsgCenterMulticast(em event.EventMessage) error {
+	ev := NewEvent(string(em.EventType))
+	areaID := em.AreaID
+	topic := fmt.Sprintf("%d/%s/%v", areaID, em.EventType, em.Param["user_id"])
+	ev.Data = em.Param
+	s.bucket.Publish(topic, ev)
+	return nil
+}

@@ -2,8 +2,9 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/zhiting-tech/smartassistant/modules/api/maintenance"
 	"github.com/zhiting-tech/smartassistant/modules/api/homebridge"
+	"github.com/zhiting-tech/smartassistant/modules/api/maintenance"
+	"github.com/zhiting-tech/smartassistant/modules/api/message"
 
 	"github.com/zhiting-tech/smartassistant/modules/api/app"
 	"github.com/zhiting-tech/smartassistant/modules/api/area"
@@ -51,4 +52,5 @@ func loadModules(r gin.IRouter) {
 	resource.RegisterResourceRouter(r)
 	maintenance.RegisterMaintenanceRouter(r)
 	homebridge.InitHomeBridgeRouter(r)
+	message.RegisterMessagesRouter(r)
 }

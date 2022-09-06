@@ -40,14 +40,18 @@ const (
 	ServiceSubDevices ServiceType = "sub_devices"
 	// ServiceUpdateDeviceService 更新设备service
 	ServiceUpdateDeviceService ServiceType = "update_device_service"
+	// ServiceUpdateDevice 更新设备
+	ServiceUpdateDevice ServiceType = "update_device"
+
+	//todo 消息推送
 )
 
 type MsgType string
 
 // 消息类型
 const (
-	MsgTypeResponse MsgType = "response"
-	MsgTypeEvent    MsgType = "event"
+	MsgTypeResponse      MsgType = "response"
+	MsgTypeEvent         MsgType = "event"
 )
 
 type Request struct {

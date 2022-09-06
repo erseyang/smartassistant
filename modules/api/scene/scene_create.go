@@ -1,7 +1,9 @@
 package scene
 
 import (
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/zhiting-tech/smartassistant/modules/api/utils/response"
 	"github.com/zhiting-tech/smartassistant/modules/entity"
@@ -126,7 +128,26 @@ func (req *CreateSceneReq) validate(c *gin.Context) (err error) {
 				return
 			}
 		}
+
+		// 执行时间判断
+		if req.RepeatType < entity.RepeatTypeAllDay || req.RepeatType > entity.RepeatTypeCustom {
+			err = errors.Newf(status.SceneParamIncorrectErr, "重复执行配置")
+			return
+		}
+
+		if !entity.CheckIllegalRepeatDate(req.RepeatDate) {
+			err = errors.Newf(status.SceneParamIncorrectErr, "重复生效时间")
+			return
+		}
 	}
+
+	if req.Name == "" || utf8.RuneCountInString(req.Name) < entity.SceneNameMinLength || utf8.RuneCountInString(req.Name) > entity.SceneNameMaxLength {
+		err = errors.Newf(status.SceneParamIncorrectErr, "场景名")
+		return
+	}
+
+	req.RepeatDate = strings.TrimSpace(req.RepeatDate)
+
 	// 执行任务的校验
 	for _, sceneTask := range req.SceneTasks {
 		if err = CheckSceneTasks(c, sceneTask); err != nil {

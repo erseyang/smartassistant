@@ -25,8 +25,14 @@ var Tables []interface{} = []interface{}{
 	User{}, UserRole{}, Scene{}, SceneCondition{},
 	SceneTask{}, TaskLog{}, GlobalSetting{}, PluginInfo{}, Client{},
 	Department{}, DepartmentUser{}, DeviceState{}, FileInfo{}, BackupInfo{},
-	UserCommonDevice{},
+	UserCommonDevice{}, UserSetting{}, MessageSetting{}, MessageRecord{},
 }
+
+const (
+	maxOpenConns = 50
+	maxIdleConns = 25
+	connMaxLifetime = 5 * time.Minute
+)
 
 func GetDB() *gorm.DB {
 	once.Do(func() {
@@ -54,18 +60,27 @@ func loadDB() {
 	default:
 		panic(fmt.Errorf("invalid dialector %v", driver))
 	}
-	sqldb, err := gorm.Open(dialect, &gorm.Config{})
+	ormDB, err := gorm.Open(dialect, &gorm.Config{})
 	if err != nil {
 		panic(fmt.Errorf("数据库连接失败 %v，dsn: %s", err.Error(), dsn))
 	}
 	// PRAGMA foreign_keys=ON 开启外键关联约束
-	sqldb.Exec("PRAGMA foreign_keys=ON;")
+	ormDB.Exec("PRAGMA foreign_keys=ON;")
 
 	logMode := logger.Warn
 	if config.GetConf().Debug {
 		logMode = logger.Info
 	}
-	db = sqldb.Session(&gorm.Session{
+
+	sqlDB, err := ormDB.DB()
+	if err != nil {
+		panic(fmt.Errorf("get sql db err %v", err))
+	}
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetConnMaxLifetime(connMaxLifetime)
+
+	db = ormDB.Session(&gorm.Session{
 		Logger: logger.New(log.New(os.Stdout, "", log.LstdFlags), logger.Config{
 			SlowThreshold:             200 * time.Millisecond,
 			LogLevel:                  logMode,

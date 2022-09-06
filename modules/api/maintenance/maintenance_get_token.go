@@ -55,6 +55,7 @@ func connectAndRefreshToken(c *gin.Context) {
 			return
 		}
 		resp.AccessToken = token
+		err = nil
 	}
 
 	connected := maintenance.ConnectMaintenanceMode()

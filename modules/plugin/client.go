@@ -86,7 +86,8 @@ func (c *client) Connect(ctx context.Context, identify Identify, authParams map[
 		return
 	}
 	if err = d.WaitOnline(ctx); err != nil {
-		return thingmodel.ThingModel{}, errors2.New(status.DeviceConnectTimeout)
+		//return thingmodel.ThingModel{}, errors2.New(status.DeviceConnectTimeout)
+		return
 	}
 	for _, ins := range das.Instances {
 		dd := pc.Device(ins.IID)

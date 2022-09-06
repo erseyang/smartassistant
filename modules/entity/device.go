@@ -79,17 +79,6 @@ func (d *Device) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
-func (d *Device) BeforeUpdate(tx *gorm.DB) (err error) {
-
-	if tx.Statement.Changed("LocationID") {
-		tx.Select("LocationOrder").Statement.SetColumn("LocationOrder", 0)
-	}
-	if tx.Statement.Changed("DepartmentID") {
-		tx.Select("DepartmentOrder").Statement.SetColumn("DepartmentOrder", 0)
-	}
-	return
-}
-
 func GetDeviceByID(id int) (device Device, err error) {
 	err = GetDB().First(&device, "id = ?", id).Error
 	return
@@ -185,7 +174,30 @@ func UpdateDevice(id int, updateDevice Device) (err error) {
 	err = GetDB().Model(&d).Updates(updateDevice).Error
 	if err != nil {
 		err = errors.Wrap(err, errors.InternalServerErr)
+		return
 	}
+
+	// 如果修改房间则重置房间号
+	if d.LocationID != updateDevice.LocationID || d.DepartmentID != updateDevice.DepartmentID {
+		err = d.resetLocationOrder()
+	}
+	if err != nil {
+		err = errors.Wrap(err, errors.InternalServerErr)
+	}
+	return
+}
+
+// 重置排序
+func (d Device) resetLocationOrder() (err error) {
+	if d.ID == 0 {
+		err = errors.Wrap(err, errors.InternalServerErr)
+		return
+	}
+	updateMap := make(map[string]interface{})
+	// 如果修改房间则重置房间号
+	updateMap["location_order"] = 0
+	updateMap["department_order"] = 0
+	err = UpdateDeviceWithMap(d.ID, updateMap)
 	return
 }
 
@@ -487,28 +499,24 @@ func (d *Device) UpdateThingModel(new thingmodel.ThingModel) (err error) {
 		"shadow":      d.Shadow,
 	}
 
-	info, err := new.GetInfo(d.IID)
-	if err != nil {
-		return err
+	if len(tm.Instances) > 0 {
+		info, err := new.GetInfo(d.IID)
+		if err != nil {
+			return err
+		}
+		infoChange := d.Model != info.Model || d.Manufacturer != info.Manufacturer || d.Type != info.Type
+		if infoChange {
+			updates["model"] = info.Model
+			updates["manufacturer"] = info.Manufacturer
+			updates["type"] = info.Type
+			d.Model = info.Model
+			d.Manufacturer = info.Manufacturer
+			d.Type = info.Type
+		}
 	}
-
-	infoChange := d.Model != info.Model || d.Manufacturer != info.Manufacturer || d.Type != info.Type
-	if infoChange {
-		updates["model"] = info.Model
-		updates["manufacturer"] = info.Manufacturer
-		updates["type"] = info.Type
-	}
-
 	if err = GetDB().Model(&d).Updates(updates).Error; err != nil {
 		return err
 	}
-
-	if infoChange {
-		d.Model = info.Model
-		d.Manufacturer = info.Manufacturer
-		d.Type = info.Type
-	}
-
 	return
 }
 

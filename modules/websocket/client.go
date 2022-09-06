@@ -157,7 +157,11 @@ func (cli *client) handleSubscribeEvent(req Request) (err error) {
 			topic = fmt.Sprintf("%s/%s", topic, data.IID)
 		}
 	}
-	topic = fmt.Sprintf("%s*", topic)
+	if req.Event == "message_center" {
+		topic = fmt.Sprintf("%s/%d", topic, req.User.UserID)
+	}else {
+		topic = fmt.Sprintf("%s*", topic)
+	}
 
 	logger.Debugf("subscribe topic: %s", topic)
 	// 当前 cli 订阅该 topic

@@ -3,9 +3,7 @@ package entity
 import (
 	errors2 "errors"
 	"strconv"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/zhiting-tech/smartassistant/modules/types/status"
 
@@ -72,23 +70,9 @@ func (s Scene) TableName() string {
 }
 
 const (
-	sceneNameMinLength = 1
-	sceneNameMaxLength = 40
+	SceneNameMinLength = 1
+	SceneNameMaxLength = 40
 )
-
-func (s *Scene) BeforeSave(tx *gorm.DB) (err error) {
-	if err = s.CheckRepeatConfig(); err != nil {
-		return
-	}
-
-	s.RepeatDate = strings.TrimSpace(s.RepeatDate)
-
-	if err = s.CheckSceneNameLength(); err != nil {
-		return
-	}
-
-	return nil
-}
 
 // HaveTimeCondition 场景是否有定时条件
 func (s Scene) HaveTimeCondition() bool {
@@ -156,31 +140,6 @@ func IsSceneNameExist(name string, sceneId int, areaId uint64) (err error) {
 	}
 	err = errors.New(status.SceneNameExist)
 	return err
-}
-
-// CheckRepeatConfig 校验重复执行的配置
-func (s Scene) CheckRepeatConfig() (err error) {
-	if s.AutoRun {
-		if s.RepeatType < RepeatTypeAllDay || s.RepeatType > RepeatTypeCustom {
-			err = errors.Newf(status.SceneParamIncorrectErr, "重复执行配置")
-			return
-		}
-
-		if !CheckIllegalRepeatDate(s.RepeatDate) {
-			err = errors.Newf(status.SceneParamIncorrectErr, "重复生效时间")
-			return
-		}
-
-	}
-	return
-}
-
-func (s Scene) CheckSceneNameLength() (err error) {
-	if s.Name == "" || utf8.RuneCountInString(s.Name) < sceneNameMinLength || utf8.RuneCountInString(s.Name) > sceneNameMaxLength {
-		err = errors.New(errors.BadRequest)
-		return
-	}
-	return
 }
 
 func CheckSceneExitById(sceneId int) (err error) {
@@ -275,5 +234,17 @@ func UpdateSceneByIDWithTx(sceneID int, update *Scene, tx *gorm.DB) (err error) 
 func UpdateSceneSort(tx *gorm.DB, id int, sort int, areaID uint64) (err error) {
 	err = tx.First(&Scene{}, "id=? and area_id=?", id, areaID).
 		Update("sort", sort).Error
+	return
+}
+
+// UpdateScene 修改场景
+func UpdateScene(id int, areaID uint64, updateMap map[string]interface{}) (err error) {
+	err = GetDB().First(&Scene{}, "id=? and area_id=?", id, areaID).
+		Updates(updateMap).Error
+	return
+}
+
+func GetAreaScenesByIDs(areaID uint64, id []int) (scenes []Scene, err error) {
+	err = GetDB().Where("id in ? and area_id=?", id, areaID).Find(&scenes).Error
 	return
 }

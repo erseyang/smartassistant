@@ -4,9 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
-
 	"github.com/sirupsen/logrus"
+	"sync"
 
 	"github.com/zhiting-tech/smartassistant/pkg/plugin/sdk/v2/definer"
 	"github.com/zhiting-tech/smartassistant/pkg/thingmodel"
@@ -37,14 +36,22 @@ type device struct {
 }
 
 type Manager struct {
-	discoveredDevices []Device
-	devices           sync.Map // iid: device
-	eventChannel      EventChan
-	eventChannels     map[EventChan]struct{}
+	devices         sync.Map // iid: device
+	eventChannel    EventChan
+	eventChannels   map[EventChan]struct{}
+	discoverDevices sync.Map // iid: device
 }
 
 func NewManager() *Manager {
 	return &Manager{}
+}
+
+func (m *Manager) GetDiscoverDevice(iid string) *device {
+	v, ok := m.discoverDevices.Load(iid)
+	if ok {
+		return v.(*device)
+	}
+	return nil
 }
 
 func (m *Manager) Init() {
@@ -106,6 +113,15 @@ func (m *Manager) InitOrUpdateDevice(d Device) error {
 	return nil
 }
 
+func (m *Manager) CloseDevice(iid string) {
+	if v, ok := m.devices.LoadAndDelete(iid); ok {
+		err := v.(*device).Close()
+		if err != nil {
+			logrus.Errorf("manager close device %s err:%v", iid, err)
+		}
+	}
+}
+
 func (m *Manager) IsOTASupport(iid string) (ok bool, err error) {
 
 	d, err := m.GetDeviceInterface(iid)
@@ -141,19 +157,40 @@ func (m *Manager) Connect(d *device, params map[string]interface{}) (err error) 
 
 	if ad, authRequired := d.Device.(AuthDevice); authRequired && !ad.IsAuth() {
 		if err = ad.Auth(params); err != nil {
-			return
+			return err
 		}
 	}
 
+	if v, loaded := m.devices.LoadOrStore(d.Info().IID, d); loaded {
+		old := v.(*device)
+		old.mutex.Lock()
+		if old.connected { // 已连接
+			if !old.Online(d.Info().IID) { // 不在线则关闭旧连接
+				old.Close()
+			} else { // 已经在线则返回
+				old.mutex.Unlock()
+				return nil
+			}
+		} else { // 未连接则用旧的未连接设备进行连接
+			d = old
+		}
+		old.mutex.Unlock()
+	}
 	d.mutex.Lock()
-	defer d.mutex.Unlock()
+	defer func() {
+		d.mutex.Unlock()
+		m.discoverDevices.Delete(d.Info().IID)
+		// 如果出错，将设备从devices删除
+		if err != nil {
+			m.devices.Delete(d.Info().IID)
+		}
+	}()
+
 	if d.connected {
 		return
 	}
-
-	logrus.Debugf("device %s connecting...", d.Info().IID)
+	logrus.Infof("device %s connecting...", d.Info().IID)
 	if err = d.Connect(); err != nil {
-		logrus.Errorf("connect err: %s", err)
 		return
 	}
 
@@ -161,11 +198,10 @@ func (m *Manager) Connect(d *device, params map[string]interface{}) (err error) 
 	d.df = definer.NewThingModelDefiner(d.Info().IID, m.notifyAttr, m.notifyThingModelChange)
 	err = d.Define(d.df)
 	if err != nil {
-		err2 := d.Close()
-		if err2 != nil {
-			logrus.Errorf("device close err: %s", err2)
+		if err2 := d.Close(); err2 != nil {
+			logrus.Errorf("device close err:%v", err2)
 		}
-		return err
+		return
 	}
 	if d.df != nil {
 		d.df.SetNotifyFunc()
@@ -176,12 +212,10 @@ func (m *Manager) Connect(d *device, params map[string]interface{}) (err error) 
 			m.devices.Store(ins.IID, d)
 		}
 	}
-
-	// 设置设备已连接，数据库标记为已添加
 	d.connected = true
 
 	logrus.Debugf("device %s connect and define done", d.Info().IID)
-	return nil
+	return
 }
 
 func (m *Manager) Disconnect(iid string, params map[string]interface{}) (err error) {
@@ -201,36 +235,21 @@ func (m *Manager) Disconnect(iid string, params map[string]interface{}) (err err
 	if err = d.Disconnect(iid); err != nil {
 		return
 	}
-	return d.Close()
+	// 子设备不会走发现，删除子设备不要把父设备的连接关掉
+	if d.Info().IID == iid {
+		err = d.Close()
+	}
+	return
 }
 
-func (m *Manager) HealthCheck(iid string) bool {
-
-	d, err := m.GetDevice(iid)
-	if err != nil {
-		logrus.Warnf("device %s not found", iid)
-		return false
-	}
-	go func() {
-		// 还没有连接则主动连接，设备需要自行处理认证信息持久化
-		if err = m.Connect(d, nil); err != nil {
-			return
-		}
-	}()
-
-	// 需要授权且未授权则更新物模型
-	if ad, ok := d.Device.(AuthDevice); ok && !ad.IsAuth() {
-		go m.notifyThingModelChange(iid)
+func (m *Manager) HealthCheck(d *device, iid string) bool {
+	if d == nil {
 		return false
 	}
 
 	online := d.Device.Online(iid)
 	logrus.Debugf("%s HealthCheck,online: %v", iid, online)
 	return online
-}
-
-func (m *Manager) Devices() (ds []Device, err error) {
-	return m.discoveredDevices, nil
 }
 
 func (m *Manager) notifyEvent(event Event) error {
@@ -254,6 +273,24 @@ func (m *Manager) notifyAttr(attrEvent definer.AttributeEvent) (err error) {
 		Data: data,
 	}
 
+	return m.notifyEvent(ev)
+}
+
+// notifyThingModelAuth d为发现设备
+func (m *Manager) notifyThingModelAuth(d *device) (err error) {
+	tme := definer.ThingModelEvent{IID: d.Info().IID}
+	var ad AuthDevice
+	ad, tme.ThingModel.AuthRequired = d.Device.(AuthDevice)
+	if !tme.ThingModel.AuthRequired {
+		return
+	}
+	tme.ThingModel.IsAuth = ad.IsAuth()
+	tme.ThingModel.AuthParams = ad.AuthParams()
+	data, _ := json.Marshal(tme)
+	ev := Event{
+		Type: ThingModelChangeEvent,
+		Data: data,
+	}
 	return m.notifyEvent(ev)
 }
 

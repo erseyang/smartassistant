@@ -335,6 +335,16 @@ var Temperature = Attribute{
 	),
 }
 
+// SmokeDetected 烟雾检测
+var SmokeDetected = Attribute{
+	Type:    "smoke_detected",
+	ValType: Int32,
+	Permission: SetPermissions(
+		AttributePermissionRead,
+		AttributePermissionNotify,
+	),
+}
+
 // LeakDetected 泄漏检测
 var LeakDetected = Attribute{
 	Type:    "leak_detected",

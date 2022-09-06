@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/zhiting-tech/smartassistant/modules/api/message"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -84,6 +85,7 @@ func main() {
 	go discovery.Listen(ctx)
 
 	go httpServer.Run(ctx)
+	go message.GetMessagesManager().Run()
 	go logHttpSrc.LogSrcRun(ctx)
 	go saDiscoverServer.Run(ctx)
 	go extension.GetExtensionServer().Run(ctx)
